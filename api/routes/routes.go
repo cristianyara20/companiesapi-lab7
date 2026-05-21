@@ -5,7 +5,9 @@ import (
 	"companies-api/api/middlewares"
 	"companies-api/application/services"
 	unitofwork "companies-api/infrastructure/unit_of_work"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -23,6 +25,13 @@ func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
 	router.Use(gin.Recovery())                             // manejo de panics
 	router.Use(middlewares.LoggerMiddleware(logger))       // logging de requests
 	router.Use(middlewares.ErrorHandlerMiddleware(logger)) // manejo de errores
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// ── Inyección de dependencias (manual, de abajo hacia arriba) ─────────
 	// Flujo: Controller → Service → UnitOfWork → Repository → GORM → DB
