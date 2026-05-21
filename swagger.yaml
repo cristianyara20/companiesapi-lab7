@@ -4,6 +4,8 @@ info:
   description: API REST con Onion Architecture, Repository Pattern y Unit of Work en Go.
   version: 1.0.0
 servers:
+  - url: https://companies-api-yr97.onrender.com
+    description: Servidor en Render (Producción)
   - url: http://localhost:8080
     description: Servidor Local
 
