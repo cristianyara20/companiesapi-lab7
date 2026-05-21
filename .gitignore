@@ -1,0 +1,13 @@
+# Variables de entorno (¡MUY IMPORTANTE PARA NO FILTRAR CREDENCIALES!)
+.env
+
+# Binarios generados por Go
+/companies-api
+/companies-api.exe
+*.exe
+
+# Carpetas de dependencias y temporales
+/vendor/
+/.idea/
+/.vscode/
+*.swp

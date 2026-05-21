@@ -1,0 +1,264 @@
+openapi: 3.0.0
+info:
+  title: API de Compañías y Empleados
+  description: API REST con Onion Architecture, Repository Pattern y Unit of Work en Go.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Servidor Local
+
+paths:
+  /api/companias:
+    get:
+      summary: Listar todas las compañías
+      tags: [Compañías]
+      responses:
+        '200':
+          description: Lista de compañías
+    post:
+      summary: Crear una compañía
+      tags: [Compañías]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompaniaDTO'
+      responses:
+        '201':
+          description: Compañía creada
+  
+  /api/companias/{id}:
+    get:
+      summary: Consultar una compañía por id
+      tags: [Compañías]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Datos de la compañía
+    put:
+      summary: Actualizar una compañía
+      tags: [Compañías]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCompaniaDTO'
+      responses:
+        '200':
+          description: Compañía actualizada
+    delete:
+      summary: Eliminar una compañía
+      tags: [Compañías]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Compañía eliminada
+
+  /api/companias/{id}/empleados:
+    get:
+      summary: Listar empleados de una compañía
+      tags: [Compañías]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de empleados
+
+  /api/companias/con-empleados:
+    post:
+      summary: Crear una compañía con múltiples empleados (Transaccional - Unit of Work)
+      tags: [Transaccional]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompaniaConEmpleadosDTO'
+      responses:
+        '201':
+          description: Compañía y empleados creados con éxito
+
+  /api/empleados:
+    get:
+      summary: Listar todos los empleados
+      tags: [Empleados]
+      responses:
+        '200':
+          description: Lista de empleados
+    post:
+      summary: Crear un empleado
+      tags: [Empleados]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmpleadoDTO'
+      responses:
+        '201':
+          description: Empleado creado
+
+  /api/empleados/{id}:
+    get:
+      summary: Consultar un empleado por id
+      tags: [Empleados]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Datos del empleado
+    put:
+      summary: Actualizar un empleado
+      tags: [Empleados]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEmpleadoDTO'
+      responses:
+        '200':
+          description: Empleado actualizado
+    delete:
+      summary: Eliminar un empleado
+      tags: [Empleados]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Empleado eliminado
+
+components:
+  schemas:
+    CreateCompaniaDTO:
+      type: object
+      required: [nombre, direccion, telefono]
+      properties:
+        nombre:
+          type: string
+          example: "Nueva Empresa S.A."
+        direccion:
+          type: string
+          example: "Calle 123"
+        telefono:
+          type: string
+          example: "555-1234"
+          
+    UpdateCompaniaDTO:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: "Empresa Actualizada"
+        direccion:
+          type: string
+        telefono:
+          type: string
+
+    CreateEmpleadoDTO:
+      type: object
+      required: [nombre, apellido, correo, cargo, salario, compania_id]
+      properties:
+        nombre:
+          type: string
+          example: "Juan"
+        apellido:
+          type: string
+          example: "Pérez"
+        correo:
+          type: string
+          example: "juan.perez@empresa.com"
+        cargo:
+          type: string
+          example: "Desarrollador"
+        salario:
+          type: number
+          example: 3000000
+        compania_id:
+          type: integer
+          example: 1
+
+    UpdateEmpleadoDTO:
+      type: object
+      properties:
+        nombre:
+          type: string
+        apellido:
+          type: string
+        correo:
+          type: string
+        cargo:
+          type: string
+        salario:
+          type: number
+          
+    CreateCompaniaConEmpleadosDTO:
+      type: object
+      required: [nombre, direccion, telefono, empleados]
+      properties:
+        nombre:
+          type: string
+          example: "StartUp Innovadora"
+        direccion:
+          type: string
+          example: "Avenida Principal"
+        telefono:
+          type: string
+          example: "3009998877"
+        empleados:
+          type: array
+          items:
+            type: object
+            required: [nombre, apellido, correo, cargo, salario]
+            properties:
+              nombre:
+                type: string
+                example: "María"
+              apellido:
+                type: string
+                example: "Gómez"
+              correo:
+                type: string
+                example: "maria.gomez@startup.com"
+              cargo:
+                type: string
+                example: "Tech Lead"
+              salario:
+                type: number
+                example: 5000000
