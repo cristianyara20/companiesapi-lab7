@@ -6,6 +6,7 @@ package interfaces
 type UnitOfWork interface {
 	Companias() CompaniaRepository  // acceso al repositorio de compañías
 	Empleados() EmpleadoRepository  // acceso al repositorio de empleados
+	Usuarios() UsuarioRepository    // acceso al repositorio de usuarios
 	BeginTransaction() error         // inicia una transacción en PostgreSQL
 	Commit() error                   // confirma todos los cambios
 	Rollback() error                 // revierte todos los cambios

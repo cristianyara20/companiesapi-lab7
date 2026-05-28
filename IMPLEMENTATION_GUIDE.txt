@@ -1,0 +1,83 @@
+# Guía paso a paso – Implementación de la Onion Architecture
+
+## 1️⃣ Preparación del proyecto
+- `go mod init companies-api`
+- Instalar dependencias: Gin, GORM, PostgreSQL driver, SQLite driver, JWT, validator, zap.
+- Crear `.gitignore` (incluye `.env`, binaries, `vendor`).
+
+## 2️⃣ Capa de Dominio (Domain)
+- **Entidades** en `domain/entities/` (Compania, Empleado, Usuario) sin tags de GORM.
+- **Interfaces de repositorio** en `domain/interfaces/` (`ICompaniaRepository`, `IEmpleadoRepository`, `IUsuarioRepository`).
+- **Interface UnitOfWork** en `domain/interfaces/unit_of_work.go` que expone los repositorios y métodos Begin/Commit/Rollback.
+
+## 3️⃣ Capa de Aplicación (Application)
+- **DTOs** con tags `validate` en `application/dtos/`.
+- **Servicios** (`CompaniaService`, `EmpleadoService`, `AuthService`) que reciben un `IUnitOfWork` y un `validator`. Cada método:
+  1. Valida el DTO.
+  2. Llama `uow.Begin()`.
+  3. Ejecuta operaciones a través de los repositorios (`uow.Companias().Create(...)`).
+  4. `uow.Commit()` o `uow.Rollback()` según el error.
+- **UnitOfWork Implementation** en `application/infrastructure/unit_of_work/` usando GORM (`*gorm.DB`). Guarda la transacción activa (`tx`).
+
+## 4️⃣ Capa de Infraestructura (Infrastructure)
+- **Conexión DB** (`infrastructure/database/database.go`) lee variables de entorno (`DB_HOST`, `DB_USER`, …) y crea `*gorm.DB`.
+- **Repositorios concretos** en `infrastructure/repositories/` que implementan las interfaces del dominio usando GORM (`db.WithContext(ctx).Create(... )`). No gestionan transacciones, usan la `*gorm.DB` proporcionada por el UnitOfWork.
+- **Migraciones** (`AutoMigrate`) al iniciar la aplicación (`database/migrate.go`).
+
+## 5️⃣ Capa de Presentación / API (API)
+- **Middlewares** (`api/middlewares/`):
+  - `AuthMiddleware` → valida JWT, guarda claims (`user_id`, `rol`, `user_compania_id`).
+  - `RequireRole` → verifica rol (ADMIN / USUARIO).
+  - `EsPropietarioDeCompania` → política de ownership.
+  - `LoggerMiddleware` → registro estructurado con zap.
+- **Controladores** (`api/controllers/`) reciben los servicios mediante inyección de dependencias y traducen peticiones HTTP a llamadas de servicio.
+- **Rutas** (`api/routes/routes.go`) configuran los endpoints y aplican los middlewares correspondientes.
+
+## 6️⃣ Bootstrap (main.go)
+1. Cargar `.env`.
+2. Inicializar logger.
+3. Crear la conexión DB.
+4. Instanciar UnitOfWork (`uow := infrastructure.NewUnitOfWork(db)`).
+5. Crear repositorios (`compRepo := infrastructure.NewCompaniaRepository(db)`, etc.).
+6. Crear servicios (`compService := application.NewCompaniaService(uow, validator.New())`).
+7. Crear controladores (`compCtrl := api.NewCompaniaController(compService)`).
+8. Configurar el router Gin y registrar rutas.
+9. Ejecutar `router.Run(":" + os.Getenv("PORT"))`.
+
+## 7️⃣ Testing
+- **Base de datos en memoria** (`sqlite :memory:`) en los tests.
+- Instanciar UnitOfWork con esa DB y pasar a los servicios.
+- Pruebas unitarias de cada servicio (validaciones, transacciones, rollback).
+- Pruebas de integración de endpoints con `httptest` (`router_test.go`).
+- Verificar códigos HTTP correctos (200, 201, 204, 400, 404, 422, 403).
+
+## 8️⃣ Documentación
+- Actualizar `README.md` con arquitectura, tecnología, variables de entorno, cómo ejecutar y probar.
+- Añadir secciones extra (`README_ADDITIONS.md`) con async, tabla comparativa, evidencia de prompts IA y sustentación.
+
+---
+**Resultado:** Con estos archivos y estructura el proyecto sigue la Onion Architecture, mantiene bajo acoplamiento entre capas, permite pruebas aisladas y soporta transacciones atómicas y seguridad basada en JWT.
+# 📋 Checklist de requisitos técnicos y arquitectónicos (Guía – Parte II)
+
+| # | Requisito | Estado |
+|---|-----------|--------|
+| 1 | Preparación del proyecto (go.mod, dependencias, .gitignore) | ✅ |
+| 2 | Capa Domain: entidades e interfaces de repositorio y UnitOfWork | ✅ |
+| 3 | Capa Application: DTOs con validator, servicios que usan UnitOfWork, validaciones de negocio | ✅ |
+| 4 | Capa Infrastructure: conexión DB, repositorios GORM, migraciones automáticas | ✅ |
+| 5 | API: middlewares (Auth, RequireRole, EsPropietarioDeCompania, Logger), controladores y rutas con inyección de dependencias | ✅ |
+| 6 | Bootstrap (main.go) que orquesta logger, DB, UnitOfWork, repos, servicios, controladores y router | ✅ |
+| 7 | Pruebas unitarias e integración con SQLite in‑memory y httptest, validando códigos 200/201/204/400/404/422/403 | ❌ (faltan pruebas httptest de todos los handlers) |
+| 8 | Documentación completa (README, tabla comparativa, async, variables de entorno, evidencia IA) | ✅ |
+| 9 | Seguridad: JWT con clave en .env, bcrypt, roles (ADMIN/USUARIO), política de ownership | ✅ |
+| 10 | Cumplimiento de la Guía – Parte II (puntuación estimada ≥ 100) | ⚠️ (pendiente completar pruebas de endpoints) |
+## 🚀 Próximos pasos
+
+- **Implementar pruebas `httptest`** para todos los handlers (GET, POST, PUT, PATCH, DELETE) y validar los códigos HTTP esperados (200, 201, 204, 400, 404, 422, 403).
+- **Actualizar el README** con la nueva tabla comparativa y la evidencia de prompts de IA (archivos `PROMPTS_IA.md`, `SUSTENTATION.md`).
+- **Ejecutar `go test ./... -count=1`** para asegurar que todas las pruebas, incluidas las nuevas de endpoints, pasen exitosamente.
+- **Revisar y corregir el warning** que la guía indica sobre `async` – añadir una breve sección explicando que Gin ya provee concurrencia.
+- **Realizar un lint** (`golangci-lint run`) y corregir cualquier advertencia restante.
+- **Documentar en el README** la forma de generar el archivo `IMPLEMENTATION_GUIDE.txt` y cómo usarlo como referencia para futuros desarrollos.
+
+Una vez completados estos puntos, el proyecto alcanzará el **100 % de cumplimiento** con la Guía – Parte II.

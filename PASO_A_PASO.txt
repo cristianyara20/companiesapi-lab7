@@ -1,0 +1,537 @@
+=========================================================
+ GUÍA DE IMPLEMENTACIÓN — Companies API
+ Onion Architecture + JWT + Go + GORM + Gin
+=========================================================
+
+-------------------------------------------------------
+PASO 1: Capa de Dominio (El corazón de la aplicación)
+-------------------------------------------------------
+
+Lo primero fue definir las reglas del negocio y los "contratos"
+(interfaces) sin tocar base de datos ni lógica pesada.
+
+¿Qué creé?
+  - La entidad Compania (ID, Nombre, Direccion, Telefono, FechaCreacion).
+  - La entidad Empleado (ID, Nombre, Apellido, Correo, Cargo, Salario, CompaniaId).
+  - La entidad Usuario (ID, Nombre, Correo, ContrasenaHash, Rol, CompaniaId, FechaCreacion).
+  - Las interfaces de repositorio:
+      ICompaniaRepository  → métodos Create, GetByID, GetAll, Update, Delete, etc.
+      IEmpleadoRepository  → métodos Create, GetAll, GetPaged, CreateRange, DeleteRange, PatchPartial, etc.
+      IUsuarioRepository   → métodos Create, FindByCorreo, GetByID, etc.
+  - La interfaz IUnitOfWork que expone los repositorios y los métodos
+    BeginTransaction(), Commit() y Rollback().
+
+¿Dónde está?
+  Carpeta: c:\companies-apii\domain\
+
+¿Para qué sirve?
+  El Dominio es la única capa que NUNCA conoce a Gin, GORM ni JWT.
+  Solo define QUÉ se puede hacer, no CÓMO.
+  La interface IUnitOfWork sirve para agrupar múltiples
+  operaciones bajo una sola transacción segura.
+
+
+-------------------------------------------------------
+PASO 2: Capa de Infraestructura (Base de datos y Repositorios)
+-------------------------------------------------------
+
+Aquí conectamos las interfaces del paso anterior con
+PostgreSQL usando la librería GORM.
+
+¿Qué creé?
+  - database.go: abre la conexión a PostgreSQL leyendo las
+    variables de entorno DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT.
+  - migrate.go: llama a db.AutoMigrate() para crear/actualizar
+    tablas automáticamente al iniciar la API.
+  - seeder.go: crea un usuario ADMIN inicial y datos de ejemplo
+    si la base de datos está vacía.
+  - CompaniaRepositoryImpl: hace los verdaderos INSERT y SELECT de compañías.
+  - EmpleadoRepositoryImpl: operaciones de empleados, incluyendo
+    GetPaged (paginación + filtrado + ordenamiento), CreateRange y DeleteRange.
+  - UsuarioRepositoryImpl: hace INSERT y SELECT de usuarios.
+  - UnitOfWorkImpl: motor de transacciones. Cuando el servicio llama
+    BeginTransaction() abre un db.Begin(). Si todo sale bien hace
+    Commit(), pero si ocurre un error a la mitad hace Rollback()
+    y borra todo lo que se alcanzó a guardar.
+
+¿Dónde está?
+  Carpeta: c:\companies-apii\infrastructure\
+
+¿Para qué sirve?
+  Es el puente entre la lógica de negocio y la base de datos real.
+  Los repositorios NO deciden si confirmar o no una transacción,
+  esa responsabilidad la tiene solo el UnitOfWork.
+  El Seeder usa golang.org/x/crypto/bcrypt para crear al
+  Administrador por defecto con contraseña segura.
+
+
+-------------------------------------------------------
+PASO 3: Capa de Aplicación (Lógica de Negocio y DTOs)
+-------------------------------------------------------
+
+Aquí puse las "reglas" de la aplicación: validaciones, lógica de
+negocio y coordinación de transacciones.
+
+¿Qué creé?
+  - CreateCompaniaDTO / UpdateCompaniaDTO: Structs para recibir
+    exactamente los datos necesarios, con tags validate:"required"
+    para rechazar nombres vacíos o teléfonos inválidos.
+  - CreateEmpleadoDTO / PatchEmpleadoDTO: Structs con validaciones
+    de correo, salario mayor a 0 y compañía obligatoria.
+  - RegisterDTO / LoginDTO: para recibir credenciales en registro
+    y login, con validate:"required,email".
+  - CompaniaService: crea, actualiza, elimina y lista compañías.
+    Incluye el método CreateConEmpleados que usa el UnitOfWork
+    para crear una compañía y sus empleados en una sola transacción.
+  - EmpleadoService: gestiona empleados individuales y en lote
+    (CreateRange, DeleteRange, PatchPartial, GetPaged con filtros).
+  - AuthService: el cerebro del inicio de sesión. Registra usuarios
+    hasheando la contraseña con bcrypt, y en el login verifica
+    el hash. Luego genera el Token JWT con el Rol y el ID de
+    compañía del usuario usando github.com/golang-jwt/jwt/v5.
+
+¿Dónde está?
+  Carpeta: c:\companies-apii\application\
+
+¿Cómo lo usé?
+  Para los Tokens JWT usé github.com/golang-jwt/jwt/v5.
+  El servicio de Auth recibe el correo y contraseña, verifica con
+  bcrypt si coincide el hash, y luego fabrica el Token con el Rol,
+  el ID de usuario y el ID de compañía.
+  Las validaciones de formato usan github.com/go-playground/validator/v10.
+  Las validaciones de negocio (correo único, compañía existente)
+  se hacen consultando los repositorios dentro del mismo servicio.
+
+
+-------------------------------------------------------
+PASO 4: Capa de Presentación o API (Controladores y Rutas)
+-------------------------------------------------------
+
+Esta capa es la que "da la cara" a Postman o al cliente frontend.
+
+¿Qué creé?
+  - AuthController: recibe las peticiones HTTP de /registro y /login
+    y las delega al AuthService.
+  - CompaniaController: endpoints GET, POST, PUT, DELETE y el
+    especial POST /con-empleados (transaccional).
+  - EmpleadoController: endpoints GET, POST, PUT, PATCH, DELETE
+    individuales y en lote (POST /lote, DELETE /lote).
+  - AuthMiddleware: valida el Token JWT de los headers. Extrae
+    los claims (user_id, rol, user_compania_id) y los guarda
+    en el contexto de Gin para los controladores y policies.
+  - RequireRole (adminRoleGuard / anyRoleGuard): verifica si el
+    usuario tiene el rol necesario para acceder a la ruta.
+  - EsPropietarioDeCompania: política de ownership. Revisa si el
+    empleado que intentas modificar realmente pertenece a tu compañía.
+    El rol ADMIN está exento de esta restricción.
+  - LoggerMiddleware: registra cada request y response con zap.
+  - routes.go: define todas las rutas y aplica los middlewares.
+
+¿Dónde está?
+  Carpeta: c:\companies-apii\api\
+
+¿Para qué sirve?
+  El middleware es una pared de seguridad usando el framework Gin.
+  Antes de dejarte entrar a un endpoint, el middleware extrae el
+  Token JWT del header Authorization, lo desencripta con JWT_SECRET,
+  lee si eres ADMIN o USUARIO y revisa si el empleado que intentas
+  modificar realmente pertenece a tu compañía.
+
+
+-------------------------------------------------------
+PASO 5: Bootstrap — main.go (El ensamblador)
+-------------------------------------------------------
+
+Este archivo une todas las capas en el orden correcto.
+
+¿Qué hice?
+  1. Cargo el archivo .env con godotenv.Load().
+  2. Inicializo el logger de zap.
+  3. Conecto la base de datos con database.NewDB().
+  4. Aplico las migraciones con database.Migrate(db).
+  5. Ejecuto el seeder con database.Seed(db).
+  6. Creo el UnitOfWork con infrastructure.NewUnitOfWork(db).
+  7. Creo los repositorios pasando el db.
+  8. Creo los servicios pasando el UnitOfWork y validator.New().
+  9. Creo los controladores pasando los servicios.
+  10. Configuro el router de Gin y registro las rutas con middlewares.
+  11. Inicio el servidor con router.Run(":" + PORT).
+
+¿Dónde está?
+  Archivo: c:\companies-apii\main.go
+
+¿Para qué sirve?
+  Es el único punto donde se "ensamblan" todas las piezas.
+  Ninguna capa se conoce directamente entre sí; se comunican
+  a través de interfaces. Esto permite cambiar, por ejemplo,
+  el repositorio de PostgreSQL por uno de MySQL sin tocar
+  los servicios ni los controladores.
+
+
+-------------------------------------------------------
+PASO 6: Pruebas y Arreglos Finales
+-------------------------------------------------------
+
+Una aplicación profesional no se sube sin ser probada automáticamente.
+
+¿Qué creé/hice?
+  - tests/services_test.go: pruebas unitarias de todos los servicios
+    (Compania, Empleado, Auth) usando SQLite en memoria.
+  - Pruebas transaccionales:
+      TestCompaniaService_CreateConEmpleados_Rollback_DuplicateEmail
+      → Verifica que si hay un correo duplicado en el lote de empleados,
+        toda la transacción se revierte (Rollback) y la compañía
+        NO queda guardada en la BD.
+      TestCompaniaService_CreateConEmpleados_Rollback_SalarioNegativo
+      → Verifica que un salario negativo también provoca Rollback completo.
+  - tests/router_test.go: pruebas de endpoints con httptest, verificando
+    los códigos HTTP de cada operación (201, 200, 403, 422, 401, etc.).
+
+¿Para qué sirve?
+  Como en Windows CGO_ENABLED=0 (el compilador de C no está activo),
+  las pruebas de base de datos en memoria fallaban con el driver
+  estándar de SQLite. Instalé github.com/glebarez/sqlite
+  (un driver 100% Go) que permite simular una base de datos en
+  los tests sin requerir compiladores adicionales.
+
+En resumen:
+  - Gin para la web (servidor HTTP, rutas, middlewares).
+  - GORM para la base de datos (ORM sobre PostgreSQL o SQLite).
+  - Bcrypt para las contraseñas (hash seguro).
+  - JWT para los tokens de autenticación y autorización.
+  - Go Validator para filtrar los datos malos (validaciones de DTO).
+  - Zap para logging estructurado.
+  - SQLite in-memory para pruebas aisladas.
+  Todo amarrado de forma limpia para que la arquitectura quede
+  idéntica al diagrama de la Arquitectura Cebolla (Onion Architecture).
+
+
+=========================================================
+ CHECKLIST DETALLADO — Requisitos Técnicos y Arquitectónicos
+ Guía de Actividad — Parte I y Parte II
+=========================================================
+
+
+── ARQUITECTURA Y PATRONES DE DISEÑO ──────────────────
+
+1. Arquitectura Cebolla (Onion Architecture): ✅ CUMPLE
+   • El código está estrictamente dividido en capas concéntricas:
+     domain (centro), application, infrastructure y api (presentación).
+   • Las capas internas (Dominio) no importan absolutamente nada
+     de las capas externas (Gin, GORM, JWT son desconocidos para el Domain).
+
+2. Patrón Repositorio (Repository Pattern): ✅ CUMPLE
+   • Toda la lógica de conexión a PostgreSQL/GORM está encapsulada.
+   • Los servicios de la aplicación no tocan la base de datos;
+     utilizan las interfaces ICompaniaRepository, IEmpleadoRepository
+     y IUsuarioRepository.
+
+3. Patrón Unidad de Trabajo (Unit of Work): ✅ CUMPLE
+   • Creado en infrastructure/unit_of_work/.
+   • Lo usamos en el endpoint POST /api/companias/con-empleados.
+     Si al insertar una compañía la creación de uno de los empleados
+     falla (correo duplicado o salario negativo), se hace un Rollback
+     automático y no se guarda absolutamente nada,
+     manteniendo la consistencia de la base de datos.
+
+
+── AUTENTICACIÓN, SEGURIDAD Y POLÍTICAS ───────────────
+
+4. JSON Web Tokens (JWT) y Hashes: ✅ CUMPLE
+   • El endpoint de registro guarda la contraseña encriptada
+     usando el algoritmo bcrypt (golang.org/x/crypto/bcrypt).
+   • El login valida el hash y genera un Token JWT firmado
+     con una clave secreta (JWT_SECRET) leída desde el .env.
+   • El token incluye: user_id, correo, rol, compania_id,
+     exp (24h), iat, iss.
+
+5. Control de Acceso basado en Roles (RBAC): ✅ CUMPLE
+   • Middleware RequireRole creado en api/middlewares/auth_middleware.go.
+   • Se restringen acciones críticas: solo los usuarios con rol
+     ADMIN pueden eliminar una compañía, usar el endpoint
+     transaccional /con-empleados, o borrar empleados masivamente.
+   • Los usuarios con rol USUARIO pueden crear y actualizar,
+     pero con restricciones de propiedad (ver punto 6).
+
+6. Política de Propiedad (Ownership / Tenancy): ✅ CUMPLE
+   • Middleware EsPropietarioDeCompania creado.
+   • Un usuario regular (rol USUARIO) solo puede editar, actualizar
+     o eliminar a los empleados que pertenezcan a la compañía
+     en la que él está registrado (user_compania_id del token).
+   • Si intenta modificar a un empleado de otra compañía,
+     el sistema arroja un error 403 (Acceso Denegado).
+   • El rol ADMIN está exento de esta regla.
+
+
+── CARACTERÍSTICAS FUNCIONALES (APIs) ─────────────────
+
+7. CRUD Completo de Entidades Relacionadas: ✅ CUMPLE
+   • Se pueden crear, leer, actualizar (PUT y PATCH) y eliminar
+     tanto Compañías como Empleados.
+   • Las compañías están vinculadas 1-a-N con los empleados
+     mediante la llave foránea CompaniaId.
+
+8. Operaciones sobre Colecciones (Bulk Operations): ✅ CUMPLE
+   • Bulk Insert: POST /api/empleados/lote permite registrar
+     una lista entera de empleados en un solo JSON.
+   • Bulk Delete: DELETE /api/empleados/lote permite borrar
+     múltiples empleados a la vez enviando una lista de IDs [1,2,3].
+   • Ambas operaciones corren dentro de una sola transacción
+     del Unit of Work.
+
+9. Paginación, Búsqueda y Ordenamiento: ✅ CUMPLE
+   • El endpoint GET /api/empleados acepta parámetros:
+     ?pagina=1&tamano=5&orden=salario&dir=desc&buscar=Desarrollador
+   • La respuesta incluye: datos, pagina, tamano, total, totalPaginas.
+   • Implementado con GORM: Offset + Limit + Count + LOWER(LIKE).
+
+10. PATCH Parcial: ✅ CUMPLE
+    • PATCH /api/empleados/:id permite actualizar solo los campos
+      enviados en el body, sin tocar el resto.
+    • Implementado con GORM .Updates(map[string]interface{}{}).
+
+
+── BUENAS PRÁCTICAS DE GO ────────────────────────────
+
+11. Propagación del Contexto (context.Context): ✅ CUMPLE
+    • Todos los repositorios, servicios y el Unit of Work exigen
+      pasar el ctx context.Context como primer parámetro.
+    • Si el usuario cancela la petición HTTP a la mitad de un
+      proceso pesado, Go cancela inmediatamente la consulta
+      a la base de datos ahorrando recursos.
+
+12. Validaciones Rigurosas (DTOs): ✅ CUMPLE
+    • Se utiliza la librería go-playground/validator/v10.
+    • Los datos de entrada no van directo a la base de datos;
+      primero pasan por los DTOs que verifican que los correos
+      sean válidos, que los salarios sean mayores a 0,
+      y que las cadenas no estén vacías.
+    • Las validaciones de negocio (correo único, compañía existente)
+      se realizan en la capa Application dentro de los servicios.
+
+13. Manejo Centralizado de Errores y Logs: ✅ CUMPLE
+    • Hay un manejador global de errores HTTP en el middleware
+      ErrorHandlerMiddleware para no repetir código de estado HTTP.
+    • Todo queda registrado en la consola usando zap.Logger
+      (puedes ver en tiempo real cada transacción o error
+      con detalles exactos en la terminal).
+    • El formato de errores de validación siempre es uniforme:
+      {"mensaje": "Error de validación", "errores": [...]}
+
+
+── PRUEBAS ───────────────────────────────────────────
+
+14. Pruebas Unitarias de Servicios: ✅ CUMPLE
+    • Archivo tests/services_test.go con SQLite in-memory.
+    • Cubre: Compania (Create, GetById, Delete),
+      Empleado (Create, DuplicateEmail, SalarioNegativo,
+      PatchPartial, GetPaged, CreateRange, DeleteRange),
+      Auth (Register, DuplicateEmail, Login, WrongPassword).
+
+15. Pruebas Transaccionales (Rollback): ✅ CUMPLE
+    • TestCompaniaService_CreateConEmpleados_Rollback_DuplicateEmail
+      → Verifica que "Rollback Corp" NO existe en BD tras el fallo.
+    • TestCompaniaService_CreateConEmpleados_Rollback_SalarioNegativo
+      → Verifica que "Salario Neg Corp" NO existe en BD tras el fallo.
+
+16. Pruebas de Endpoints HTTP (httptest): ❌ PENDIENTE
+    • Faltan tests que verifiquen los códigos HTTP de los handlers
+      (200, 201, 204, 400, 404, 422, 403) directamente.
+    • Se tiene router_test.go parcial pero incompleto.
+
+
+── DOCUMENTACIÓN ─────────────────────────────────────
+
+17. README Completo: ✅ CUMPLE
+    • Incluye: tecnologías, arquitectura, CRUD de colecciones,
+      async (goroutines + Gin), validaciones, pruebas,
+      seguridad (JWT, roles, políticas), variables de entorno,
+      Swagger y tabla comparativa ASP.NET vs Go.
+
+18. Tabla Comparativa Ampliada (Guía Sección 14): ✅ CUMPLE
+    • Documentada en README.md y README_ADDITIONS.md.
+    • Cubre: colecciones, paginación, async, validator,
+      testing, JWT, roles, políticas, claims.
+
+19. Evidencia de Prompts de IA (7-12): ✅ CUMPLE
+    • Documentado en README: uso de Google Deepmind – Antigravity
+      para transferir conceptos de C#/ASP.NET Core a Go.
+
+20. Swagger/OpenAPI: ✅ CUMPLE
+    • Disponible en http://localhost:8080/docs
+    • Archivo swagger.yaml en la raíz del proyecto.
+
+
+=========================================================
+ RESUMEN FINAL
+=========================================================
+
+  Requisitos cumplidos:  19 / 20
+  Porcentaje:            ~95%
+
+  Punto pendiente:
+  [❌] Completar pruebas httptest de handlers (tests/router_test.go)
+       para validar todos los códigos HTTP en cada endpoint.
+
+  El proyecto está al ~95% de cumplimiento con ambas guías
+  (Parte I y Parte II). Es una API de nivel profesional lista
+  para producción. Una vez completadas las pruebas de handlers,
+  alcanzará el 100% de los requisitos técnicos y arquitectónicos.
+=========================================================
+
+
+=========================================================
+ CÓMO SE RESPETA LA ARQUITECTURA ONION EN ESTE PROYECTO
+=========================================================
+
+La Arquitectura Cebolla (Onion Architecture) se basa en una regla
+fundamental: las capas internas NO conocen a las capas externas.
+Aquí se explica cómo se cumple esto en cada punto del código:
+
+
+── REGLA 1: EL DOMINIO NO CONOCE A NADIE ─────────────
+
+El paquete domain/ NO importa ningún paquete externo.
+Ningún archivo dentro de domain/ contiene las palabras:
+  "gorm", "gin", "jwt", "bcrypt", "validator"
+
+¿Cómo se verifica?
+  Abre cualquier archivo en domain/entities/ o domain/interfaces/
+  y verás que solo usa tipos nativos de Go (string, uint, float64,
+  time.Time, context.Context).
+
+  Ejemplo: domain/entities/compania.go define solo:
+    type Compania struct {
+        ID        uint
+        Nombre    string
+        Direccion string
+        Telefono  string
+    }
+  Sin tags de GORM, sin JSON binding, sin nada externo.
+
+
+── REGLA 2: LA APLICACIÓN SOLO HABLA CON EL DOMINIO ──
+
+El paquete application/ importa únicamente:
+  - domain/entities  (las entidades)
+  - domain/interfaces (los contratos de repositorio y UoW)
+  - go-playground/validator (validaciones, única excepción justificada)
+
+¿Cómo se verifica?
+  Los servicios (CompaniaService, EmpleadoService, AuthService)
+  reciben interfaces como parámetros, nunca structs concretos:
+
+    type CompaniaService struct {
+        uow       interfaces.IUnitOfWork   // interfaz, no implementación
+        validator *validator.Validate
+    }
+
+  El servicio llama a uow.Companias().Create(ctx, &compania)
+  sin saber si por debajo hay PostgreSQL, SQLite o un mock.
+
+
+── REGLA 3: INFRAESTRUCTURA IMPLEMENTA, NO DECIDE ────
+
+El paquete infrastructure/ implementa las interfaces del Dominio
+con GORM, pero NUNCA decide si hacer Commit o Rollback.
+
+¿Cómo se verifica?
+  En cualquier repositorio concreto (ej. CompaniaRepositoryImpl)
+  verás que el método Create solo hace:
+    return r.db.WithContext(ctx).Create(compania).Error
+
+  No hay db.Begin(), no hay Commit(), no hay Rollback().
+  Esa responsabilidad la tiene EXCLUSIVAMENTE el UnitOfWork.
+
+  El UnitOfWorkImpl es el único que llama a:
+    r.tx = r.db.Begin()
+    r.tx.Commit()
+    r.tx.Rollback()
+
+
+── REGLA 4: LA API SOLO DELEGA, NO PROCESA ───────────
+
+Los controladores en api/controllers/ NO hacen lógica de negocio.
+Solo hacen tres cosas:
+  1. Recibir el JSON del request (ShouldBindJSON).
+  2. Llamar al servicio correspondiente.
+  3. Devolver la respuesta HTTP con el código correcto.
+
+¿Cómo se verifica?
+  En CompaniaController.Create no verás ninguna consulta a la BD,
+  ninguna validación de negocio ni ninguna transacción.
+  Solo:
+    compania, err := c.service.Create(ctx, dto)
+    if err != nil { ctx.JSON(422, err) }
+    ctx.JSON(201, compania)
+
+  Toda la lógica pesada está en CompaniaService.Create.
+
+
+── REGLA 5: LAS DEPENDENCIAS APUNTAN HACIA ADENTRO ──
+
+El flujo de dependencias es siempre:
+  API → Application → Domain ← Infrastructure
+
+  API conoce a Application (usa los servicios).
+  Application conoce a Domain (usa las interfaces).
+  Infrastructure conoce a Domain (implementa las interfaces).
+  Domain no conoce a nadie.
+
+¿Cómo se verifica en main.go?
+  El ensamblado sigue estrictamente este orden:
+    1. db := database.NewDB()           ← Infrastructure
+    2. uow := unit_of_work.New(db)      ← Infrastructure
+    3. svc := services.NewService(uow)  ← Application
+    4. ctrl := controllers.New(svc)     ← API
+    5. router.POST("/...", ctrl.Create) ← API
+
+  Nótese que nunca se pasa db directamente a un controlador
+  ni a un servicio; siempre pasa por las abstracciones.
+
+
+── REGLA 6: LAS PRUEBAS VALIDAN EL AISLAMIENTO ──────
+
+Las pruebas en tests/ crean una BD SQLite en memoria y la
+pasan al UnitOfWork. Los servicios no saben que el repositorio
+por debajo usa SQLite en lugar de PostgreSQL.
+
+¿Cómo se verifica?
+  En services_test.go:
+    db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+    database.Migrate(db)
+    uow := unit_of_work.NewUnitOfWork(db)
+    svc := services.NewCompaniaService(uow, validator.New())
+
+  El CompaniaService usa exactamente la misma lógica que en
+  producción; solo cambia la implementación de la BD debajo.
+  Esto solo es posible gracias al respeto de las interfaces
+  del Dominio (Onion Architecture funciona correctamente).
+
+
+── RESUMEN VISUAL DE LA ARQUITECTURA ─────────────────
+
+        ┌─────────────────────────────────┐
+        │          API / Gin              │  ← Controladores, Middlewares
+        │  Conoce a: Application          │
+        └──────────────┬──────────────────┘
+                       │
+        ┌──────────────▼──────────────────┐
+        │         APPLICATION             │  ← Servicios, DTOs, UoW
+        │  Conoce a: Domain               │
+        └──────────────┬──────────────────┘
+                       │
+        ┌──────────────▼──────────────────┐
+        │           DOMAIN                │  ← Entidades, Interfaces
+        │  No conoce a nadie              │
+        └──────────────▲──────────────────┘
+                       │
+        ┌──────────────┴──────────────────┐
+        │       INFRASTRUCTURE            │  ← GORM, Repos, Migraciones
+        │  Implementa las interfaces      │
+        │  del Domain                     │
+        └─────────────────────────────────┘
+
+La arquitectura se respeta en cada archivo, en cada import
+y en cada llamada a función del proyecto.
+=========================================================

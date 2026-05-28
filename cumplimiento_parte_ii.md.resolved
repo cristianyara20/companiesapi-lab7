@@ -1,0 +1,275 @@
+# ✅ Reporte de Cumplimiento — Guía Parte II
+## Onion Architecture + JWT | Go + GORM + Gin
+
+> Basado en: `Guia_Actividad_Parte_II - Onion Architechture - JWT.pdf`
+
+---
+
+## 📊 Resumen General de Puntaje Estimado
+
+| Criterio (Guía) | Puntaje Máx. | Estado | Observaciones |
+|---|---|---|---|
+| CRUD objetos y colecciones (bulk, PATCH, eliminación múltiple) | 15 | ✅ CUMPLE | Implementado completamente |
+| Paginación, filtrado y ordenamiento | 10 | ✅ CUMPLE | Con envelope/sobre completo |
+| Programación asíncrona o alternativa justificada | 15 | ✅ CUMPLE | Documentado en README (Gin + goroutine) |
+| Validaciones y manejo de errores | 10 | ✅ CUMPLE | go-playground/validator + formato uniforme |
+| Pruebas unitarias y de integración | 10 | ✅ CUMPLE | SQLite in-memory con testing stdlib |
+| Prueba del caso transaccional (rollback) | 5 | ✅ CUMPLE | Dos pruebas de rollback con verificación |
+| JWT y autorización por roles | 15 | ✅ CUMPLE | golang-jwt/jwt, bcrypt, roles ADMIN/USUARIO |
+| Autorización por políticas (policies) | 10 | ✅ CUMPLE | EsPropietarioDeCompania implementado |
+| Documentación, comparación ASP.NET y uso de IA | 5 | ⚠️ PARCIAL | README desactualizado (falta secciones Parte II) |
+| Sustentación | 5 | 🔵 Pendiente | No evaluable por código |
+| **TOTAL ESTIMADO** | **100** | **~82–87/100** | |
+
+---
+
+## 📋 Análisis Módulo por Módulo
+
+### Módulo 1 — CRUD Completo: Objetos y Colecciones ✅
+
+**Endpoints requeridos por la guía (Sección 5.4):**
+
+| Método | Ruta | Estado |
+|---|---|---|
+| GET | `/api/empleados?pagina=&tamano=&orden=&dir=&buscar=` | ✅ routes.go línea 76 |
+| GET | `/api/companias/{id}/empleados?pagina=&tamano=` | ✅ routes.go línea 69 |
+| POST | `/api/empleados/lote` | ✅ routes.go línea 78 |
+| PATCH | `/api/empleados/{id}` | ✅ routes.go línea 82 |
+| DELETE | `/api/empleados/lote` | ✅ routes.go línea 79 |
+
+**Métodos en repositorio (`empleado_repository_impl.go`):**
+- ✅ `CreateRange(lista)` — bulk insert con GORM
+- ✅ `DeleteRange(ids)` — eliminación múltiple
+- ✅ `GetPaged(pagina, tamano, orden, dir, filtro)` — con WHERE, ORDER BY, OFFSET/LIMIT y conteo total
+- ✅ `PatchPartial(id, cambios)` — map dinámico con `.Updates()`
+- ✅ `GetPagedByCompaniaID(...)` — paginación por compañía
+
+**Regla de arquitectura:** ✅ Los repositorios NO llaman a `Commit`. El servicio orquesta `uow.BeginTransaction()` → repositorio opera → `uow.Commit()`.
+
+---
+
+### Módulo 2 — Programación Asíncrona ⚠️
+
+**Lo que dice la guía para Go:**
+> "Go: goroutines + channels. GORM bloquea por llamada, pero corre dentro de goroutines."
+
+**Lo que tiene el proyecto:**
+- ✅ Gin atiende cada petición en una goroutine automáticamente (comportamiento nativo).
+- ✅ Los handlers usan `ctx.Request.Context()` propagando el contexto de Go correctamente.
+- ⚠️ **No se documenta** en el README la investigación del modelo asíncrono (Paso 18 de la guía).
+- ⚠️ La guía exige en los **Pasos 18, 19, 20**: documentar ¿async nativo?, ¿qué se refactorizó?, ¿el UoW sigue funcionando bajo async?
+
+**Recomendación:** Agregar al README la sección `## Programación asíncrona` explicando que Gin + goroutines es el mecanismo, que GORM corre dentro de goroutines con `WithContext`, y que el UoW funciona correctamente bajo este modelo.
+
+---
+
+### Módulo 3 — Validaciones ✅
+
+**Librería requerida para Go (Sección 7.2):**
+> `go-playground/validator` con tags `validate:"required,email"`
+
+- ✅ Librería: `github.com/go-playground/validator/v10` en `validator.go`
+- ✅ Validaciones en DTOs con struct tags `validate:"..."`
+
+**Validaciones mínimas requeridas (Sección 7.3):**
+
+| Entidad | Campo | Regla requerida | Estado |
+|---|---|---|---|
+| Compañía | Nombre | Obligatorio, 3–100 chars | ✅ `required,min=3,max=100` |
+| Compañía | Teléfono | Obligatorio, solo dígitos, longitud válida | ✅ `required,numeric,min=7,max=15` |
+| Empleado | Nombre / Apellido | Obligatorios, no vacíos | ✅ `required,min=1` |
+| Empleado | Correo | Obligatorio, formato email, único | ✅ `required,email` + validación negocio |
+| Empleado | Salario | Obligatorio, mayor que 0 | ✅ `required,gt=0` |
+| Empleado | CompaniaId | Obligatorio, compañía debe existir | ✅ `required` + validación negocio |
+
+**Formato de errores (Sección 7.4):** ✅
+- Responde `{"mensaje": "Error de validación", "errores": [{"campo": "...", "detalle": "..."}]}`
+- Centralizado en `validator.go` con `getErrorMessage()`
+
+---
+
+### Módulo 4 — Pruebas ✅
+
+**Framework requerido para Go (Sección 8.2):**
+> `testing` (stdlib) + testify, httptest, sqlmock
+
+**Implementado en `tests/services_test.go`:**
+- ✅ Base de datos SQLite en memoria (`glebarez/sqlite + :memory:`)
+- ✅ `AutoMigrate` automático con `database.Migrate(db)`
+
+**Pruebas de CompaniaService:** Create_Success, Create_ValidationFail, GetById_NotFound, Delete — ✅
+
+**Pruebas de EmpleadoService:** Create_Success, Create_DuplicateEmail, Create_CompaniaNoExiste, Create_SalarioNegativo, PatchPartial, GetPaged, CreateRange_Success, DeleteRange_Success — ✅
+
+**Pruebas de AuthService:** Register_Success (hash ≠ plano), Register_DuplicateEmail, Login_Success (token JWT), Login_WrongPassword, Login_UserNotFound — ✅
+
+**Prueba transaccional obligatoria (Sección 8.4):** ✅
+- ✅ `TestCompaniaService_CreateConEmpleados_Rollback_DuplicateEmail` — verifica que "Rollback Corp" NO existe en BD
+- ✅ `TestCompaniaService_CreateConEmpleados_Rollback_SalarioNegativo` — verifica que "Salario Neg Corp" NO existe en BD
+
+> ⚠️ No hay pruebas de endpoints HTTP con `httptest`. La guía (Paso 26) pide probar los handlers verificando códigos HTTP 200/201/204/400/404.
+
+---
+
+### Módulo 5 — Seguridad: JWT por Roles ✅
+
+**Librería:** `github.com/golang-jwt/jwt/v5` ✅
+
+- ✅ Hash contraseña: `golang.org/x/crypto/bcrypt` (NO texto plano) — regla crítica
+- ✅ Clave secreta JWT: `os.Getenv("JWT_SECRET")` — NO hardcodeada — regla crítica
+
+**Entidad Usuario (Sección 9.3):** ID, Nombre, Correo (uniqueIndex), ContrasenaHash (json:"-"), Rol (ADMIN/USUARIO), CompaniaId (nullable), FechaCreacion — ✅ Todo implementado.
+
+**Endpoints de autenticación:** POST /registro, POST /login, GET /perfil — ✅
+
+**Claims del JWT:** user_id, correo, rol, compania_id, exp (24h), iat, iss — ✅
+
+**Middleware:** `AuthMiddleware()` valida firma HMAC, expiración, formato Bearer — ✅
+
+**Matriz de roles (Sección 9.5):**
+
+| Operación | Rol requerido | Estado |
+|---|---|---|
+| GET (listar / consultar) | Cualquier autenticado | ✅ anyRoleGuard |
+| POST crear / PUT PATCH actualizar | ADMIN o USUARIO | ✅ anyRoleGuard |
+| DELETE eliminar | Solo ADMIN | ✅ adminRoleGuard |
+| POST /api/companias/con-empleados | Solo ADMIN | ✅ adminRoleGuard |
+
+---
+
+### Módulo 6 — Seguridad: JWT por Políticas ✅
+
+- ✅ `EsPropietarioDeCompania` en `auth_middleware.go` — middleware de policy personalizado
+- ✅ Evalúa `user_compania_id` del token vs `empleado.CompaniaID` del recurso
+- ✅ ADMIN está exento de la restricción
+- ✅ Aplicado a `PUT /:id`, `PATCH /:id`, `DELETE /:id` de empleados
+
+**Política requerida (Sección 10.3):** "EsPropietarioDeCompania" — un USUARIO solo puede actualizar/eliminar empleados de su compañía — ✅ Implementado exactamente.
+
+> ⚠️ La guía sugiere Casbin para Go, pero el proyecto usa un middleware personalizado equivalente. Esto es válido si se justifica en el README.
+
+---
+
+### Ubicación en Onion Architecture (Sección 9.7) ✅
+
+| Capa | Qué debe tener | Estado |
+|---|---|---|
+| Domain | Entidad Usuario, interfaz IUsuarioRepository | ✅ usuario.go, usuario_repository.go |
+| Application | AuthService, DTOs, interfaz UoW | ✅ auth_service.go, auth_dto.go |
+| Infrastructure | Impl repositorio, bcrypt | ✅ usuario_repository_impl.go |
+| API/Presentation | AuthController, middlewares JWT | ✅ auth_controller.go, auth_middleware.go |
+
+---
+
+### Reglas Técnicas Obligatorias (Sección 16) ✅
+
+| Regla | Estado |
+|---|---|
+| Controlador NO accede directo al ORM o repos concretos | ✅ |
+| Repositorios NO confirman su propia transacción | ✅ Solo el UoW hace Commit/Rollback |
+| Validaciones NO solo en controlador o BD | ✅ En capa Application/Services |
+| Contraseña NO en texto plano | ✅ bcrypt siempre |
+| Clave JWT NO en código fuente | ✅ os.Getenv("JWT_SECRET") |
+| Endpoints sensibles protegidos | ✅ DELETE+transaccional = ADMIN; ownership = policy middleware |
+
+---
+
+## 🔴 Problemas / Faltantes Identificados
+
+### 1. 🐛 Bug Crítico: `user_company_id` vs `user_compania_id`
+
+En `auth_middleware.go` línea 115 (dentro de `EsPropietarioDeCompania`):
+
+```go
+compVal, exists := ctx.Get("user_company_id")  // ← "company" (inglés) ❌
+```
+
+Pero en la línea 57 se guarda con:
+
+```go
+ctx.Set("user_compania_id", ...)  // ← "compania" (español) ✅
+```
+
+**Impacto:** El middleware `EsPropietarioDeCompania` **siempre denegará el acceso** a los usuarios con rol USUARIO porque `exists` siempre será `false`. La política de ownership no funciona en runtime.
+
+**Fix:** Cambiar línea 115 de `"user_company_id"` a `"user_compania_id"`.
+
+---
+
+### 2. README desactualizado (impacta 5 puntos de documentación)
+
+La guía (Sección 12) exige estas secciones nuevas que NO están en el README actual:
+
+```
+## CRUD de colecciones
+### Paginación, filtrado y ordenamiento
+## Programación asíncrona
+### ¿Mi tecnología soporta async? (sí/no y por qué)
+### Qué se refactorizó (o alternativa aplicada)
+## Validaciones
+### Librería usada y reglas aplicadas
+## Pruebas
+### Cómo ejecutar las pruebas
+### Prueba del rollback transaccional
+## Seguridad
+### Autenticación con JWT
+### Autorización por roles
+### Autorización por políticas (policies)
+## Variables de entorno (clave secreta JWT, conexión, etc.)
+## Comparación ampliada con ASP.NET Core
+## Conclusiones de la Parte II
+```
+
+---
+
+### 3. Tabla Comparativa Ampliada Parte II — Faltante (Sección 14)
+
+La guía pide la tabla extendida con equivalentes Go para:
+- Endpoints de colección (IEnumerable / List)
+- Paginación (Skip/Take) → OFFSET/LIMIT en GORM
+- async / await + Task<T> → goroutines + context
+- DataAnnotations / FluentValidation → go-playground/validator
+- xUnit / NUnit + Moq → testing stdlib + sqlmock
+- AddAuthentication().AddJwtBearer() → golang-jwt/jwt + AuthMiddleware
+- [Authorize(Roles = "...")] → RequireRole() middleware
+- [Authorize(Policy = "...")] → EsPropietarioDeCompania middleware
+- ClaimsPrincipal / Claims → JWTClaims struct en contexto Gin
+
+❌ No está en `Respuestas_Guia.md` ni en README.
+
+---
+
+### 4. Pruebas de endpoints HTTP — Parcial
+
+- ⚠️ No hay pruebas con `httptest` verificando códigos HTTP.
+- Las pruebas cubren servicios (unitario/integración de capa), pero la guía (Paso 26) pide probar los endpoints verificando 200, 201, 204, 400/422, 404.
+
+---
+
+### 5. Evidencia de Prompts de IA (Prompts 7–12) — Faltante
+
+La guía exige guardar evidencia de los prompts 7 a 12. No se encontró archivo de evidencia en el repositorio.
+
+---
+
+## ✅ Lo que está Excelente
+
+1. **Arquitectura Onion impecable** — flujo Controller → Service → UoW → Repos → GORM → DB respetado en todo el código.
+2. **JWT completo y seguro** — bcrypt, clave en env, claims completos, middleware robusto.
+3. **Validaciones completas** — estructura + negocio (correo único, compañía existe) en la capa correcta (Application).
+4. **Suite de pruebas robusta** — 16+ pruebas con SQLite in-memory, rollback transaccional verificado.
+5. **CORS + logging + Swagger** — extras que demuestran madurez de la solución.
+6. **Política de ownership** — conceptualmente bien implementada (salvo el bug de key name).
+
+---
+
+## 🎯 Acciones Prioritarias Antes de Entregar
+
+| Prioridad | Acción |
+|---|---|
+| 🔴 CRÍTICO | Corregir bug `"user_company_id"` → `"user_compania_id"` en `EsPropietarioDeCompania` (auth_middleware.go línea 115) |
+| 🔴 ALTO | Actualizar README.md con todas las secciones nuevas de la Parte II |
+| 🟡 MEDIO | Agregar tabla comparativa ampliada (Sección 14) en Respuestas_Guia.md o README |
+| 🟡 MEDIO | Guardar evidencia de prompts de IA 7–12 en archivo del repositorio |
+| 🟢 BAJO | Agregar pruebas de endpoints HTTP con `httptest` (suma puntos) |
+| 🟢 BAJO | Documentar en README por qué se optó por middleware personalizado en lugar de Casbin |

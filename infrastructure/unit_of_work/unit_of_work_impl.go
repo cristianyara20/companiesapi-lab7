@@ -9,22 +9,12 @@ import (
 )
 
 // UnitOfWorkImpl coordina todos los repositorios bajo una misma transacción
-//
-// ¿Cómo funciona?
-//   - u.db  = conexión original a PostgreSQL (nunca cambia)
-//   - u.tx  = sesión activa (empieza como u.db, cambia a transacción con BeginTransaction)
-//   - Los repositorios siempre usan u.tx, así que automáticamente participan
-//     en la transacción activa sin saberlo
-//
-// Equivalente conceptual en EF Core:
-//   - db.Begin()    → dbContext.Database.BeginTransactionAsync()
-//   - tx.Commit()   → transaction.CommitAsync()
-//   - tx.Rollback() → transaction.RollbackAsync()
 type UnitOfWorkImpl struct {
 	db        *gorm.DB
 	tx        *gorm.DB
 	companias interfaces.CompaniaRepository
 	empleados interfaces.EmpleadoRepository
+	usuarios  interfaces.UsuarioRepository
 }
 
 // NewUnitOfWork crea una nueva instancia del Unit of Work
@@ -51,8 +41,15 @@ func (u *UnitOfWorkImpl) Empleados() interfaces.EmpleadoRepository {
 	return u.empleados
 }
 
+// Usuarios devuelve el repositorio de usuarios usando la sesión activa
+func (u *UnitOfWorkImpl) Usuarios() interfaces.UsuarioRepository {
+	if u.usuarios == nil {
+		u.usuarios = repositories.NewUsuarioRepository(u.tx)
+	}
+	return u.usuarios
+}
+
 // BeginTransaction inicia una transacción real en PostgreSQL
-// Todos los repositorios creados después de esta llamada usarán la misma tx
 func (u *UnitOfWorkImpl) BeginTransaction() error {
 	tx := u.db.Begin()
 	if tx.Error != nil {
@@ -61,6 +58,7 @@ func (u *UnitOfWorkImpl) BeginTransaction() error {
 	u.tx = tx         // reemplaza la sesión activa por la transacción
 	u.companias = nil // reinicia repos para que usen el nuevo tx
 	u.empleados = nil
+	u.usuarios = nil
 	return nil
 }
 
@@ -73,6 +71,7 @@ func (u *UnitOfWorkImpl) Commit() error {
 	u.tx = u.db // restaura la sesión a la conexión original
 	u.companias = nil
 	u.empleados = nil
+	u.usuarios = nil
 	return err
 }
 
@@ -85,5 +84,6 @@ func (u *UnitOfWorkImpl) Rollback() error {
 	u.tx = u.db
 	u.companias = nil
 	u.empleados = nil
+	u.usuarios = nil
 	return err
 }

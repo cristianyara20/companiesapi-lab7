@@ -2,16 +2,16 @@ package services
 
 import (
 	"companies-api/application/dtos"
+	"companies-api/application/validation"
 	"companies-api/domain/entities"
 	"companies-api/domain/interfaces"
+	"context"
 	"errors"
 
 	"go.uber.org/zap"
 )
 
 // CompaniaService contiene la lógica de negocio de compañías
-// REGLA IMPORTANTE: nunca accede directamente al ORM
-// Siempre usa el UnitOfWork para acceder a los repositorios
 type CompaniaService struct {
 	uow    interfaces.UnitOfWork
 	logger *zap.Logger
@@ -21,27 +21,32 @@ func NewCompaniaService(uow interfaces.UnitOfWork, logger *zap.Logger) *Compania
 	return &CompaniaService{uow: uow, logger: logger}
 }
 
-func (s *CompaniaService) GetAll() ([]entities.Compania, error) {
-	return s.uow.Companias().GetAll()
+func (s *CompaniaService) GetAll(ctx context.Context) ([]entities.Compania, error) {
+	return s.uow.Companias().GetAll(ctx)
 }
 
-func (s *CompaniaService) GetById(id uint) (*entities.Compania, error) {
-	c, err := s.uow.Companias().GetById(id)
+func (s *CompaniaService) GetById(ctx context.Context, id uint) (*entities.Compania, error) {
+	c, err := s.uow.Companias().GetById(ctx, id)
 	if err != nil {
 		return nil, errors.New("compañía no encontrada")
 	}
 	return c, nil
 }
 
-func (s *CompaniaService) Create(dto dtos.CreateCompaniaDTO) (*entities.Compania, error) {
+func (s *CompaniaService) Create(ctx context.Context, dto dtos.CreateCompaniaDTO) (*entities.Compania, error) {
 	s.logger.Info("Creando compañía", zap.String("nombre", dto.Nombre))
+
+	// 1. Validación estructural (Capa de Aplicación)
+	if err := validation.ValidateStruct(dto); err != nil {
+		return nil, err
+	}
 
 	c := &entities.Compania{
 		Nombre:    dto.Nombre,
 		Direccion: dto.Direccion,
 		Telefono:  dto.Telefono,
 	}
-	if err := s.uow.Companias().Create(c); err != nil {
+	if err := s.uow.Companias().Create(ctx, c); err != nil {
 		s.logger.Error("Error al crear compañía", zap.Error(err))
 		return nil, err
 	}
@@ -49,71 +54,101 @@ func (s *CompaniaService) Create(dto dtos.CreateCompaniaDTO) (*entities.Compania
 	return c, nil
 }
 
-func (s *CompaniaService) Update(id uint, dto dtos.UpdateCompaniaDTO) (*entities.Compania, error) {
-	c, err := s.uow.Companias().GetById(id)
+func (s *CompaniaService) Update(ctx context.Context, id uint, dto dtos.UpdateCompaniaDTO) (*entities.Compania, error) {
+	// 1. Validación estructural (Capa de Aplicación)
+	if err := validation.ValidateStruct(dto); err != nil {
+		return nil, err
+	}
+
+	c, err := s.uow.Companias().GetById(ctx, id)
 	if err != nil {
 		return nil, errors.New("compañía no encontrada")
 	}
-	if dto.Nombre != "" {
-		c.Nombre = dto.Nombre
+	
+	if dto.Nombre != nil {
+		c.Nombre = *dto.Nombre
 	}
-	if dto.Direccion != "" {
-		c.Direccion = dto.Direccion
+	if dto.Direccion != nil {
+		c.Direccion = *dto.Direccion
 	}
-	if dto.Telefono != "" {
-		c.Telefono = dto.Telefono
+	if dto.Telefono != nil {
+		c.Telefono = *dto.Telefono
 	}
-	if err := s.uow.Companias().Update(c); err != nil {
+	
+	if err := s.uow.Companias().Update(ctx, c); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func (s *CompaniaService) Delete(id uint) error {
-	if _, err := s.uow.Companias().GetById(id); err != nil {
+func (s *CompaniaService) Delete(ctx context.Context, id uint) error {
+	if _, err := s.uow.Companias().GetById(ctx, id); err != nil {
 		return errors.New("compañía no encontrada")
 	}
-	return s.uow.Companias().Delete(id)
+	return s.uow.Companias().Delete(ctx, id)
 }
 
-func (s *CompaniaService) GetEmpleados(id uint) (*entities.Compania, error) {
-	c, err := s.uow.Companias().GetWithEmpleados(id)
+func (s *CompaniaService) GetEmpleados(ctx context.Context, id uint) (*entities.Compania, error) {
+	c, err := s.uow.Companias().GetWithEmpleados(ctx, id)
 	if err != nil {
 		return nil, errors.New("compañía no encontrada")
 	}
 	return c, nil
 }
 
-// CreateConEmpleados — CASO TRANSACCIONAL OBLIGATORIO
-// Crea una compañía y todos sus empleados en UNA sola transacción.
-// Si falla CUALQUIER empleado → Rollback → no se guarda NADA.
-func (s *CompaniaService) CreateConEmpleados(dto dtos.CreateCompaniaConEmpleadosDTO) (*entities.Compania, error) {
+func (s *CompaniaService) GetEmpleadosPaged(ctx context.Context, id uint, pagina, tamano int) ([]entities.Empleado, int64, error) {
+	if _, err := s.uow.Companias().GetById(ctx, id); err != nil {
+		return nil, 0, errors.New("compañía no encontrada")
+	}
+	return s.uow.Empleados().GetPagedByCompaniaID(ctx, id, pagina, tamano)
+}
+
+// CreateConEmpleados — CASO TRANSACCIONAL OBLIGATORIO (con Contexto y Validación)
+func (s *CompaniaService) CreateConEmpleados(ctx context.Context, dto dtos.CreateCompaniaConEmpleadosDTO) (*entities.Compania, error) {
 	s.logger.Info("🔄 INICIO de transacción",
 		zap.String("compania", dto.Nombre),
 		zap.Int("empleados", len(dto.Empleados)),
 	)
 
-	// PASO 1: iniciar transacción
+	// 1. Validación estructural de toda la petición (incluidos los empleados anidados)
+	if err := validation.ValidateStruct(dto); err != nil {
+		return nil, err
+	}
+
+	// 2. Iniciar transacción del Unit of Work
 	if err := s.uow.BeginTransaction(); err != nil {
 		s.logger.Error("Error iniciando transacción", zap.Error(err))
 		return nil, err
 	}
 
-	// PASO 2: crear compañía dentro de la transacción
+	// 3. Crear compañía dentro de la transacción
 	compania := &entities.Compania{
 		Nombre:    dto.Nombre,
 		Direccion: dto.Direccion,
 		Telefono:  dto.Telefono,
 	}
-	if err := s.uow.Companias().Create(compania); err != nil {
+	if err := s.uow.Companias().Create(ctx, compania); err != nil {
 		s.logger.Error("❌ Error en compañía → ROLLBACK", zap.Error(err))
 		s.uow.Rollback()
 		return nil, err
 	}
 	s.logger.Info("Compañía lista en transacción", zap.Uint("id", compania.ID))
 
-	// PASO 3: crear cada empleado dentro de la MISMA transacción
+	// 4. Crear cada empleado dentro de la misma transacción validando reglas de negocio
 	for _, empDTO := range dto.Empleados {
+		// Validar Regla de Negocio: Correo Único en DB
+		exists, err := s.uow.Empleados().FindByCondition(ctx, "correo = ?", empDTO.Correo)
+		if err == nil && len(exists) > 0 {
+			s.logger.Error("❌ Correo duplicado detectado en lote → ROLLBACK", zap.String("correo", empDTO.Correo))
+			s.uow.Rollback()
+			return nil, &validation.ValidationError{
+				Mensaje: "Error de validación de negocio",
+				Errores: []validation.ValidationErrorDetail{
+					{Campo: "correo", Detalle: "El correo [" + empDTO.Correo + "] ya está registrado por otro empleado. Transacción cancelada."},
+				},
+			}
+		}
+
 		emp := &entities.Empleado{
 			Nombre:     empDTO.Nombre,
 			Apellido:   empDTO.Apellido,
@@ -122,19 +157,18 @@ func (s *CompaniaService) CreateConEmpleados(dto dtos.CreateCompaniaConEmpleados
 			Salario:    empDTO.Salario,
 			CompaniaID: compania.ID,
 		}
-		if err := s.uow.Empleados().Create(emp); err != nil {
+		if err := s.uow.Empleados().Create(ctx, emp); err != nil {
 			s.logger.Error("❌ Error en empleado → ROLLBACK TOTAL",
 				zap.String("correo", empDTO.Correo),
 				zap.Error(err),
 			)
-			// Revierte la compañía Y todos los empleados ya creados
 			s.uow.Rollback()
 			return nil, errors.New("error en empleado [" + empDTO.Correo + "]: toda la operación fue revertida")
 		}
 		s.logger.Info("Empleado listo en transacción", zap.String("nombre", empDTO.Nombre))
 	}
 
-	// PASO 4: confirmar todo junto
+	// 5. Confirmar todo junto
 	if err := s.uow.Commit(); err != nil {
 		s.logger.Error("❌ Error en Commit → ROLLBACK", zap.Error(err))
 		s.uow.Rollback()

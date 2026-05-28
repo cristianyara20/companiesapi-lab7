@@ -41,6 +41,7 @@ func Migrate(db *gorm.DB) {
 	err := db.AutoMigrate(
 		&entities.Compania{},
 		&entities.Empleado{},
+		&entities.Usuario{},
 	)
 	if err != nil {
 		log.Fatalf("❌ Error en migraciones: %v", err)

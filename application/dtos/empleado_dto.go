@@ -1,23 +1,21 @@
 package dtos
 
 // CreateEmpleadoDTO datos requeridos para crear un empleado
-// binding:"email" → valida formato de correo
-// binding:"gt=0"  → salario debe ser mayor a 0
 type CreateEmpleadoDTO struct {
-	Nombre     string  `json:"nombre"      binding:"required"`
-	Apellido   string  `json:"apellido"    binding:"required"`
-	Correo     string  `json:"correo"      binding:"required,email"`
-	Cargo      string  `json:"cargo"       binding:"required"`
-	Salario    float64 `json:"salario"     binding:"required,gt=0"`
-	CompaniaID uint    `json:"compania_id" binding:"required"`
+	Nombre     string  `json:"nombre"      validate:"required,min=1"`
+	Apellido   string  `json:"apellido"    validate:"required,min=1"`
+	Correo     string  `json:"correo"      validate:"required,email"`
+	Cargo      string  `json:"cargo"       validate:"required"`
+	Salario    float64 `json:"salario"     validate:"required,gt=0"`
+	CompaniaID uint    `json:"compania_id" validate:"required"`
 }
 
-// UpdateEmpleadoDTO todos los campos son opcionales
+// UpdateEmpleadoDTO campos opcionales para actualizar un empleado
 type UpdateEmpleadoDTO struct {
-	Nombre     string  `json:"nombre"`
-	Apellido   string  `json:"apellido"`
-	Correo     string  `json:"correo"`
-	Cargo      string  `json:"cargo"`
-	Salario    float64 `json:"salario"`
-	CompaniaID uint    `json:"compania_id"`
+	Nombre     *string  `json:"nombre"      validate:"omitempty,min=1"`
+	Apellido   *string  `json:"apellido"    validate:"omitempty,min=1"`
+	Correo     *string  `json:"correo"      validate:"omitempty,email"`
+	Cargo      *string  `json:"cargo"       validate:"omitempty"`
+	Salario    *float64 `json:"salario"     validate:"omitempty,gt=0"`
+	CompaniaID *uint    `json:"compania_id" validate:"omitempty"`
 }

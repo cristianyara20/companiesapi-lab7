@@ -1,0 +1,108 @@
+{
+  "info": {
+    "name": "Companies API - Guía Completa",
+    "description": "Colección de pruebas para la API REST con Arquitectura Cebolla, JWT y Unit of Work.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Autenticación (JWT)",
+      "item": [
+        {
+          "name": "1. Registro de ADMIN",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Admin Supremo\",\r\n  \"correo\": \"admin_supremo@test.com\",\r\n  \"contrasena\": \"Secreto123*\",\r\n  \"rol\": \"ADMIN\"\r\n}"
+            },
+            "url": {"raw": "http://localhost:8080/api/auth/registro", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "auth", "registro"]}
+          }
+        },
+        {
+          "name": "2. Login",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"correo\": \"admin_supremo@test.com\",\r\n  \"contrasena\": \"Secreto123*\"\r\n}"
+            },
+            "url": {"raw": "http://localhost:8080/api/auth/login", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "auth", "login"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Compañías (Requiere Token)",
+      "item": [
+        {
+          "name": "3. Crear Compañía Normal",
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "PEGAR_TU_TOKEN_AQUI", "type": "string"}]},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Tech Corp\",\r\n  \"direccion\": \"Av. Principal 123\",\r\n  \"telefono\": \"3001234567\"\r\n}"
+            },
+            "url": {"raw": "http://localhost:8080/api/companias", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "companias"]}
+          }
+        },
+        {
+          "name": "4. Crear Compañía + Empleados (Unit of Work)",
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "PEGAR_TU_TOKEN_AQUI", "type": "string"}]},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Empresa Transaccional SAS\",\r\n  \"direccion\": \"Calle Falsa 123\",\r\n  \"telefono\": \"3201112233\",\r\n  \"empleados\": [\r\n    {\r\n      \"nombre\": \"Maria\",\r\n      \"apellido\": \"Lopez\",\r\n      \"correo\": \"maria.l@transaccional.com\",\r\n      \"cargo\": \"Gerente\",\r\n      \"salario\": 8000000,\r\n      \"compania_id\": 999\r\n    },\r\n    {\r\n      \"nombre\": \"Pedro\",\r\n      \"apellido\": \"García\",\r\n      \"correo\": \"pedro.g@transaccional.com\",\r\n      \"cargo\": \"Contador\",\r\n      \"salario\": 4000000,\r\n      \"compania_id\": 999\r\n    }\r\n  ]\r\n}"
+            },
+            "url": {"raw": "http://localhost:8080/api/companias/con-empleados", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "companias", "con-empleados"]}
+          }
+        },
+        {
+          "name": "5. Listar Compañías",
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "PEGAR_TU_TOKEN_AQUI", "type": "string"}]},
+            "method": "GET",
+            "url": {"raw": "http://localhost:8080/api/companias", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "companias"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Empleados (Bulk Operations)",
+      "item": [
+        {
+          "name": "6. Creación Masiva (Bulk Create)",
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "PEGAR_TU_TOKEN_AQUI", "type": "string"}]},
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "[\r\n  {\r\n    \"nombre\": \"Ana\",\r\n    \"apellido\": \"Gómez\",\r\n    \"correo\": \"ana.gomez@globaltech.com\",\r\n    \"cargo\": \"Diseñadora UX\",\r\n    \"salario\": 3200000,\r\n    \"compania_id\": 1\r\n  },\r\n  {\r\n    \"nombre\": \"Luis\",\r\n    \"apellido\": \"Ramírez\",\r\n    \"correo\": \"luis.ramirez@globaltech.com\",\r\n    \"cargo\": \"DevOps\",\r\n    \"salario\": 5000000,\r\n    \"compania_id\": 1\r\n  }\r\n]"
+            },
+            "url": {"raw": "http://localhost:8080/api/empleados/lote", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "empleados", "lote"]}
+          }
+        },
+        {
+          "name": "7. Eliminación Múltiple (Bulk Delete)",
+          "request": {
+            "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "PEGAR_TU_TOKEN_AQUI", "type": "string"}]},
+            "method": "DELETE",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"ids\": [1, 2, 3]\r\n}"
+            },
+            "url": {"raw": "http://localhost:8080/api/empleados/lote", "protocol": "http", "host": ["localhost"], "port": "8080", "path": ["api", "empleados", "lote"]}
+          }
+        }
+      ]
+    }
+  ]
+}

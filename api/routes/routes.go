@@ -14,10 +14,6 @@ import (
 )
 
 // Setup configura el router con todas las rutas y la inyección de dependencias
-// Este archivo es el equivalente a Program.cs en ASP.NET Core:
-//   - Registra middlewares
-//   - Registra servicios (DI manual)
-//   - Define las rutas
 func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
 	router := gin.New()
 
@@ -27,41 +23,67 @@ func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
 	router.Use(middlewares.ErrorHandlerMiddleware(logger)) // manejo de errores
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
 	// ── Inyección de dependencias (manual, de abajo hacia arriba) ─────────
-	// Flujo: Controller → Service → UnitOfWork → Repository → GORM → DB
 	uow := unitofwork.NewUnitOfWork(db)
 	companiaService := services.NewCompaniaService(uow, logger)
 	empleadoService := services.NewEmpleadoService(uow, logger)
+	authService := services.NewAuthService(uow, logger)
+
 	companiaCtrl := controllers.NewCompaniaController(companiaService, logger)
 	empleadoCtrl := controllers.NewEmpleadoController(empleadoService, logger)
+	authCtrl := controllers.NewAuthController(authService, logger)
+
+	// Middlewares reutilizables
+	authGuard := middlewares.AuthMiddleware()
+	adminRoleGuard := middlewares.RequireRole("ADMIN")
+	anyRoleGuard := middlewares.RequireRole("ADMIN", "USUARIO")
+	ownershipGuard := middlewares.EsPropietarioDeCompania(empleadoService)
 
 	// ── Rutas de la API ───────────────────────────────────────────────────
 	api := router.Group("/api")
 	{
-		// Rutas de compañías
-		comp := api.Group("/companias")
-		comp.GET("", companiaCtrl.GetAll)                            // Listar todas
-		comp.GET("/:id", companiaCtrl.GetById)                       // Buscar por ID
-		comp.POST("", companiaCtrl.Create)                           // Crear
-		comp.PUT("/:id", companiaCtrl.Update)                        // Actualizar
-		comp.DELETE("/:id", companiaCtrl.Delete)                     // Eliminar
-		comp.GET("/:id/empleados", companiaCtrl.GetEmpleados)        // Empleados de una compañía
-		comp.POST("/con-empleados", companiaCtrl.CreateConEmpleados) // Transaccional
+		// Rutas públicas de Autenticación
+		authGroup := api.Group("/auth")
+		{
+			authGroup.POST("/registro", authCtrl.Registro)
+			authGroup.POST("/login", authCtrl.Login)
+			authGroup.GET("/perfil", authGuard, authCtrl.Perfil) // requiere token
+		}
 
-		// Rutas de empleados
+		// Rutas protegidas de compañías
+		comp := api.Group("/companias")
+		comp.Use(authGuard)
+		{
+			comp.GET("", anyRoleGuard, companiaCtrl.GetAll)                            // Listar todas (Cualquier usuario autenticado)
+			comp.POST("", anyRoleGuard, companiaCtrl.Create)                           // Crear
+			comp.POST("/con-empleados", adminRoleGuard, companiaCtrl.CreateConEmpleados) // Transaccional (Solo ADMIN)
+			comp.GET("/:id", anyRoleGuard, companiaCtrl.GetById)                       // Buscar por ID
+			comp.PUT("/:id", anyRoleGuard, companiaCtrl.Update)                        // Actualizar
+			comp.DELETE("/:id", adminRoleGuard, companiaCtrl.Delete)                   // Eliminar (Solo ADMIN)
+			comp.GET("/:id/empleados", anyRoleGuard, companiaCtrl.GetEmpleados)        // Empleados de una compañía
+		}
+
+		// Rutas protegidas de empleados
 		emp := api.Group("/empleados")
-		emp.GET("", empleadoCtrl.GetAll)        // Listar todos
-		emp.GET("/:id", empleadoCtrl.GetById)   // Buscar por ID
-		emp.POST("", empleadoCtrl.Create)       // Crear
-		emp.PUT("/:id", empleadoCtrl.Update)    // Actualizar
-		emp.DELETE("/:id", empleadoCtrl.Delete) // Eliminar
+		emp.Use(authGuard)
+		{
+			emp.GET("", anyRoleGuard, empleadoCtrl.GetAll)                                // Listar todos (paged, filtered, sorted)
+			emp.POST("", anyRoleGuard, empleadoCtrl.Create)                               // Crear
+			emp.POST("/lote", anyRoleGuard, empleadoCtrl.CreateRange)                     // Creación masiva (Bulk)
+			emp.DELETE("/lote", adminRoleGuard, empleadoCtrl.DeleteRange)                 // Eliminación múltiple (Solo ADMIN)
+			emp.GET("/:id", anyRoleGuard, empleadoCtrl.GetById)                           // Buscar por ID
+			emp.PUT("/:id", anyRoleGuard, ownershipGuard, empleadoCtrl.Update)            // Reemplazo completo (Propietario / ADMIN)
+			emp.PATCH("/:id", anyRoleGuard, ownershipGuard, empleadoCtrl.Patch)           // Actualización parcial (Propietario / ADMIN)
+			emp.DELETE("/:id", anyRoleGuard, ownershipGuard, empleadoCtrl.Delete)         // Eliminar individual (Propietario / ADMIN)
+		}
 	}
+
 	// ── Rutas Swagger UI (Documentación Interactiva) ──────────────────────
 	router.StaticFile("/swagger.yaml", "./swagger.yaml")
 	router.GET("/docs", func(c *gin.Context) {
@@ -80,6 +102,7 @@ func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
     window.ui = SwaggerUIBundle({
       url: '/swagger.yaml',
       dom_id: '#swagger-ui',
+      persistAuthorization: true,
     });
   };
 </script>

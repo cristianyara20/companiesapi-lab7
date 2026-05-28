@@ -1,173 +1,98 @@
 openapi: 3.0.0
 info:
-  title: API de Compañías y Empleados
-  description: API REST con Onion Architecture, Repository Pattern y Unit of Work en Go.
-  version: 1.0.0
+  title: API de Compañías y Empleados v2
+  description: |
+    API REST con Onion Architecture, Repository Pattern, Unit of Work,
+    JWT Authentication y RBAC en Go.
+    
+    ## Autenticación
+    La mayoría de endpoints requieren un token JWT en el header `Authorization`.
+    1. Regístrate en `/api/auth/registro`
+    2. Inicia sesión en `/api/auth/login` para obtener tu token
+    3. Usa el botón **Authorize** 🔒 e ingresa: `Bearer <tu_token>`
+    
+    ## Roles
+    - **ADMIN**: Acceso total (eliminar compañías, operaciones masivas, etc.)
+    - **USUARIO**: Acceso limitado a su propia compañía (ownership policy)
+  version: 2.0.0
+
 servers:
-  - url: https://companies-api-yr97.onrender.com
-    description: Servidor en Render (Producción)
   - url: http://localhost:8080
     description: Servidor Local
+  - url: https://companies-api-yr97.onrender.com
+    description: Servidor en Render (Producción)
 
-paths:
-  /api/companias:
-    get:
-      summary: Listar todas las compañías
-      tags: [Compañías]
-      responses:
-        '200':
-          description: Lista de compañías
-    post:
-      summary: Crear una compañía
-      tags: [Compañías]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateCompaniaDTO'
-      responses:
-        '201':
-          description: Compañía creada
-  
-  /api/companias/{id}:
-    get:
-      summary: Consultar una compañía por id
-      tags: [Compañías]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Datos de la compañía
-    put:
-      summary: Actualizar una compañía
-      tags: [Compañías]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateCompaniaDTO'
-      responses:
-        '200':
-          description: Compañía actualizada
-    delete:
-      summary: Eliminar una compañía
-      tags: [Compañías]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '204':
-          description: Compañía eliminada
-
-  /api/companias/{id}/empleados:
-    get:
-      summary: Listar empleados de una compañía
-      tags: [Compañías]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Lista de empleados
-
-  /api/companias/con-empleados:
-    post:
-      summary: Crear una compañía con múltiples empleados (Transaccional - Unit of Work)
-      tags: [Transaccional]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateCompaniaConEmpleadosDTO'
-      responses:
-        '201':
-          description: Compañía y empleados creados con éxito
-
-  /api/empleados:
-    get:
-      summary: Listar todos los empleados
-      tags: [Empleados]
-      responses:
-        '200':
-          description: Lista de empleados
-    post:
-      summary: Crear un empleado
-      tags: [Empleados]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateEmpleadoDTO'
-      responses:
-        '201':
-          description: Empleado creado
-
-  /api/empleados/{id}:
-    get:
-      summary: Consultar un empleado por id
-      tags: [Empleados]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Datos del empleado
-    put:
-      summary: Actualizar un empleado
-      tags: [Empleados]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateEmpleadoDTO'
-      responses:
-        '200':
-          description: Empleado actualizado
-    delete:
-      summary: Eliminar un empleado
-      tags: [Empleados]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '204':
-          description: Empleado eliminado
+# ── Esquema de Seguridad JWT ────────────────────────────────────────────
+security:
+  - BearerAuth: []
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Token JWT obtenido en /api/auth/login. Formato: Bearer <token>"
+
   schemas:
+    # ── DTOs de Autenticación ───────────────────────────────────────────
+    RegisterDTO:
+      type: object
+      required: [nombre, correo, contrasena, rol]
+      properties:
+        nombre:
+          type: string
+          example: "Juan Pérez"
+        correo:
+          type: string
+          format: email
+          example: "juan.perez@empresa.com"
+        contrasena:
+          type: string
+          format: password
+          example: "MiClave123*"
+          minLength: 6
+        rol:
+          type: string
+          enum: [ADMIN, USUARIO]
+          example: "USUARIO"
+        compania_id:
+          type: integer
+          example: 1
+          description: "ID de la compañía a la que pertenece (opcional para ADMIN)"
+
+    LoginDTO:
+      type: object
+      required: [correo, contrasena]
+      properties:
+        correo:
+          type: string
+          format: email
+          example: "admin@companies.com"
+        contrasena:
+          type: string
+          format: password
+          example: "Admin123*"
+
+    TokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        usuario:
+          type: object
+          properties:
+            id:
+              type: integer
+            nombre:
+              type: string
+            correo:
+              type: string
+            rol:
+              type: string
+
+    # ── DTOs de Compañías ───────────────────────────────────────────────
     CreateCompaniaDTO:
       type: object
       required: [nombre, direccion, telefono]
@@ -181,7 +106,7 @@ components:
         telefono:
           type: string
           example: "555-1234"
-          
+
     UpdateCompaniaDTO:
       type: object
       properties:
@@ -193,6 +118,42 @@ components:
         telefono:
           type: string
 
+    CreateCompaniaConEmpleadosDTO:
+      type: object
+      required: [nombre, direccion, telefono, empleados]
+      properties:
+        nombre:
+          type: string
+          example: "StartUp Innovadora"
+        direccion:
+          type: string
+          example: "Avenida Principal"
+        telefono:
+          type: string
+          example: "3009998877"
+        empleados:
+          type: array
+          items:
+            type: object
+            required: [nombre, apellido, correo, cargo, salario]
+            properties:
+              nombre:
+                type: string
+                example: "María"
+              apellido:
+                type: string
+                example: "Gómez"
+              correo:
+                type: string
+                example: "maria.gomez@startup.com"
+              cargo:
+                type: string
+                example: "Tech Lead"
+              salario:
+                type: number
+                example: 5000000
+
+    # ── DTOs de Empleados ───────────────────────────────────────────────
     CreateEmpleadoDTO:
       type: object
       required: [nombre, apellido, correo, cargo, salario, compania_id]
@@ -229,38 +190,512 @@ components:
           type: string
         salario:
           type: number
-          
-    CreateCompaniaConEmpleadosDTO:
+
+    PatchEmpleadoDTO:
       type: object
-      required: [nombre, direccion, telefono, empleados]
+      description: "Solo envía los campos que deseas actualizar"
       properties:
         nombre:
           type: string
-          example: "StartUp Innovadora"
-        direccion:
+          example: "Carlos"
+        apellido:
           type: string
-          example: "Avenida Principal"
-        telefono:
+        correo:
           type: string
-          example: "3009998877"
-        empleados:
+        cargo:
+          type: string
+          example: "Senior Developer"
+        salario:
+          type: number
+          example: 6000000
+
+    # ── Respuesta Paginada ──────────────────────────────────────────────
+    PaginatedResponse:
+      type: object
+      properties:
+        datos:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateEmpleadoDTO'
+        pagina:
+          type: integer
+          example: 1
+        tamano:
+          type: integer
+          example: 5
+        total:
+          type: integer
+          example: 25
+        totalPaginas:
+          type: integer
+          example: 5
+
+    # ── Respuesta de Error ──────────────────────────────────────────────
+    ValidationErrorResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: "Error de validación"
+        errores:
           type: array
           items:
             type: object
-            required: [nombre, apellido, correo, cargo, salario]
             properties:
-              nombre:
+              campo:
                 type: string
-                example: "María"
-              apellido:
+                example: "correo"
+              detalle:
                 type: string
-                example: "Gómez"
-              correo:
-                type: string
-                example: "maria.gomez@startup.com"
-              cargo:
-                type: string
-                example: "Tech Lead"
-              salario:
-                type: number
-                example: 5000000
+                example: "Formato de correo electrónico inválido"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "compañía no encontrada"
+
+# ── RUTAS ───────────────────────────────────────────────────────────────
+paths:
+
+  # ══════════════════════════════════════════════════════════════════════
+  #  AUTENTICACIÓN
+  # ══════════════════════════════════════════════════════════════════════
+
+  /api/auth/registro:
+    post:
+      summary: Registrar un nuevo usuario
+      description: |
+        Crea un nuevo usuario con contraseña hasheada (bcrypt).
+        No requiere autenticación.
+      tags: [Autenticación]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDTO'
+      responses:
+        '201':
+          description: Usuario registrado exitosamente
+        '422':
+          description: Error de validación (correo duplicado, campos inválidos)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /api/auth/login:
+    post:
+      summary: Iniciar sesión y obtener token JWT
+      description: |
+        Valida las credenciales y devuelve un token JWT firmado.
+        El token incluye: user_id, correo, rol, compania_id, exp (24h).
+        No requiere autenticación.
+      tags: [Autenticación]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginDTO'
+      responses:
+        '200':
+          description: Login exitoso — token JWT devuelto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/perfil:
+    get:
+      summary: Ver perfil del usuario autenticado
+      description: Devuelve los datos del usuario extraídos del token JWT.
+      tags: [Autenticación]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Datos del perfil del usuario
+        '401':
+          description: Token ausente o expirado
+
+  # ══════════════════════════════════════════════════════════════════════
+  #  COMPAÑÍAS
+  # ══════════════════════════════════════════════════════════════════════
+
+  /api/companias:
+    get:
+      summary: Listar todas las compañías
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Compañías]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de compañías
+        '401':
+          description: Token ausente o expirado
+    post:
+      summary: Crear una compañía
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Compañías]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompaniaDTO'
+      responses:
+        '201':
+          description: Compañía creada
+        '422':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /api/companias/{id}:
+    get:
+      summary: Consultar una compañía por ID
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Compañías]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Datos de la compañía
+        '404':
+          description: Compañía no encontrada
+    put:
+      summary: Actualizar una compañía
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Compañías]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCompaniaDTO'
+      responses:
+        '200':
+          description: Compañía actualizada
+        '404':
+          description: Compañía no encontrada
+        '422':
+          description: Error de validación
+    delete:
+      summary: Eliminar una compañía
+      description: "⚠️ Solo ADMIN puede eliminar compañías"
+      tags: [Compañías]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Compañía eliminada
+        '403':
+          description: Acceso denegado — rol insuficiente
+        '404':
+          description: Compañía no encontrada
+
+  /api/companias/{id}/empleados:
+    get:
+      summary: Listar empleados de una compañía
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Compañías]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de empleados de la compañía
+        '404':
+          description: Compañía no encontrada
+
+  /api/companias/con-empleados:
+    post:
+      summary: Crear compañía con empleados (Transaccional — Unit of Work)
+      description: |
+        Crea una compañía y sus empleados en una sola transacción atómica.
+        Si algún empleado falla (correo duplicado, salario negativo), se hace
+        **Rollback** completo y no se guarda nada.
+        ⚠️ Solo ADMIN.
+      tags: [Transaccional]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompaniaConEmpleadosDTO'
+      responses:
+        '201':
+          description: Compañía y empleados creados exitosamente
+        '403':
+          description: Acceso denegado — solo ADMIN
+        '422':
+          description: Error de validación — Rollback ejecutado
+
+  # ══════════════════════════════════════════════════════════════════════
+  #  EMPLEADOS
+  # ══════════════════════════════════════════════════════════════════════
+
+  /api/empleados:
+    get:
+      summary: Listar empleados con paginación, búsqueda y ordenamiento
+      description: |
+        Devuelve una página de empleados filtrada y ordenada.
+        Requiere rol: ADMIN o USUARIO.
+      tags: [Empleados]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pagina
+          in: query
+          description: Número de página (por defecto 1)
+          schema:
+            type: integer
+            default: 1
+            example: 1
+        - name: tamano
+          in: query
+          description: Cantidad de registros por página (por defecto 10)
+          schema:
+            type: integer
+            default: 10
+            example: 5
+        - name: orden
+          in: query
+          description: "Columna para ordenar: id, nombre, apellido, correo, cargo, salario, compania_id"
+          schema:
+            type: string
+            default: id
+            example: salario
+        - name: dir
+          in: query
+          description: "Dirección del orden: asc o desc"
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+            example: desc
+        - name: buscar
+          in: query
+          description: "Texto para buscar en nombre, apellido o correo"
+          schema:
+            type: string
+            example: "Desarrollador"
+      responses:
+        '200':
+          description: Página de empleados con metadata de paginación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+    post:
+      summary: Crear un empleado
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Empleados]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmpleadoDTO'
+      responses:
+        '201':
+          description: Empleado creado
+        '422':
+          description: Error de validación
+
+  /api/empleados/{id}:
+    get:
+      summary: Consultar un empleado por ID
+      description: "Requiere rol: ADMIN o USUARIO"
+      tags: [Empleados]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Datos del empleado
+        '404':
+          description: Empleado no encontrado
+    put:
+      summary: Actualizar un empleado (reemplazo completo)
+      description: |
+        Reemplaza todos los campos del empleado.
+        Requiere ownership (el empleado debe pertenecer a tu compañía) o rol ADMIN.
+      tags: [Empleados]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEmpleadoDTO'
+      responses:
+        '200':
+          description: Empleado actualizado
+        '403':
+          description: Acceso denegado — no es propietario de esta compañía
+        '404':
+          description: Empleado no encontrado
+    patch:
+      summary: Actualizar parcialmente un empleado (PATCH)
+      description: |
+        Actualiza **solo los campos enviados** sin tocar los demás.
+        Requiere ownership o rol ADMIN.
+      tags: [Empleados]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchEmpleadoDTO'
+      responses:
+        '200':
+          description: Empleado actualizado parcialmente
+        '403':
+          description: Acceso denegado — no es propietario
+        '404':
+          description: Empleado no encontrado
+    delete:
+      summary: Eliminar un empleado
+      description: "Requiere ownership o rol ADMIN"
+      tags: [Empleados]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Empleado eliminado
+        '403':
+          description: Acceso denegado
+        '404':
+          description: Empleado no encontrado
+
+  # ── Operaciones en Lote (Bulk) ────────────────────────────────────────
+
+  /api/empleados/lote:
+    post:
+      summary: Crear empleados en lote (Bulk Insert)
+      description: |
+        Inserta múltiples empleados en una sola petición.
+        Requiere rol: ADMIN o USUARIO.
+      tags: [Empleados — Lote]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateEmpleadoDTO'
+            example:
+              - nombre: "Ana"
+                apellido: "López"
+                correo: "ana.lopez@empresa.com"
+                cargo: "Frontend Developer"
+                salario: 3500000
+                compania_id: 1
+              - nombre: "Pedro"
+                apellido: "Ruiz"
+                correo: "pedro.ruiz@empresa.com"
+                cargo: "Backend Developer"
+                salario: 4000000
+                compania_id: 1
+      responses:
+        '201':
+          description: Empleados creados exitosamente
+        '422':
+          description: Error de validación en uno o más empleados
+    delete:
+      summary: Eliminar empleados en lote (Bulk Delete)
+      description: |
+        Elimina múltiples empleados enviando una lista de IDs.
+        ⚠️ Solo ADMIN.
+      tags: [Empleados — Lote]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+            example: [1, 5, 8]
+      responses:
+        '200':
+          description: Empleados eliminados
+        '403':
+          description: Acceso denegado — solo ADMIN

@@ -1,25 +1,23 @@
 package dtos
 
 // CreateCompaniaDTO datos requeridos para crear una compañía
-// binding:"required" → Gin valida que el campo no esté vacío
 type CreateCompaniaDTO struct {
-	Nombre    string `json:"nombre"    binding:"required"`
-	Direccion string `json:"direccion" binding:"required"`
-	Telefono  string `json:"telefono"  binding:"required"`
+	Nombre    string `json:"nombre"    validate:"required,min=3,max=100"`
+	Direccion string `json:"direccion" validate:"omitempty"`
+	Telefono  string `json:"telefono"  validate:"required,numeric,min=7,max=15"`
 }
 
-// UpdateCompaniaDTO todos los campos son opcionales en un PUT
+// UpdateCompaniaDTO campos opcionales para actualizar una compañía
 type UpdateCompaniaDTO struct {
-	Nombre    string `json:"nombre"`
-	Direccion string `json:"direccion"`
-	Telefono  string `json:"telefono"`
+	Nombre    *string `json:"nombre"    validate:"omitempty,min=3,max=100"`
+	Direccion *string `json:"direccion" validate:"omitempty"`
+	Telefono  *string `json:"telefono"  validate:"omitempty,numeric,min=7,max=15"`
 }
 
 // CreateCompaniaConEmpleadosDTO para el endpoint transaccional
-// Crea compañía + empleados en una sola transacción
 type CreateCompaniaConEmpleadosDTO struct {
-	Nombre    string              `json:"nombre"    binding:"required"`
-	Direccion string              `json:"direccion" binding:"required"`
-	Telefono  string              `json:"telefono"  binding:"required"`
-	Empleados []CreateEmpleadoDTO `json:"empleados" binding:"required,min=1"`
+	Nombre    string              `json:"nombre"    validate:"required,min=3,max=100"`
+	Direccion string              `json:"direccion" validate:"required"`
+	Telefono  string              `json:"telefono"  validate:"required,numeric,min=7,max=15"`
+	Empleados []CreateEmpleadoDTO `json:"empleados" validate:"required,min=1,dive"`
 }

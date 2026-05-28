@@ -3,61 +3,56 @@ package repositories
 import (
 	"companies-api/domain/entities"
 	"companies-api/domain/interfaces"
+	"context"
 
 	"gorm.io/gorm"
 )
 
-// companiaRepositoryImpl es la implementación concreta del repositorio
-// Vive en Infrastructure, no en Domain (Onion Architecture)
+// companiaRepositoryImpl es la implementación concreta del repositorio de compañías
 type companiaRepositoryImpl struct {
 	db *gorm.DB
 }
 
 // NewCompaniaRepository crea el repositorio con el db inyectado
-// El db puede ser la conexión normal o una transacción activa
 func NewCompaniaRepository(db *gorm.DB) interfaces.CompaniaRepository {
 	return &companiaRepositoryImpl{db: db}
 }
 
-func (r *companiaRepositoryImpl) GetAll() ([]entities.Compania, error) {
+func (r *companiaRepositoryImpl) GetAll(ctx context.Context) ([]entities.Compania, error) {
 	var list []entities.Compania
-	result := r.db.Find(&list)
+	result := r.db.WithContext(ctx).Find(&list)
 	return list, result.Error
 }
 
-func (r *companiaRepositoryImpl) GetById(id uint) (*entities.Compania, error) {
+func (r *companiaRepositoryImpl) GetById(ctx context.Context, id uint) (*entities.Compania, error) {
 	var c entities.Compania
-	if err := r.db.First(&c, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&c, id).Error; err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-func (r *companiaRepositoryImpl) Create(c *entities.Compania) error {
-	// IMPORTANTE: NO llama a Commit aquí
-	// El Commit es responsabilidad exclusiva del Unit of Work
-	return r.db.Create(c).Error
+func (r *companiaRepositoryImpl) Create(ctx context.Context, c *entities.Compania) error {
+	return r.db.WithContext(ctx).Create(c).Error
 }
 
-func (r *companiaRepositoryImpl) Update(c *entities.Compania) error {
-	return r.db.Save(c).Error
+func (r *companiaRepositoryImpl) Update(ctx context.Context, c *entities.Compania) error {
+	return r.db.WithContext(ctx).Save(c).Error
 }
 
-func (r *companiaRepositoryImpl) Delete(id uint) error {
-	return r.db.Delete(&entities.Compania{}, id).Error
+func (r *companiaRepositoryImpl) Delete(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&entities.Compania{}, id).Error
 }
 
-func (r *companiaRepositoryImpl) FindByCondition(cond string, args ...interface{}) ([]entities.Compania, error) {
+func (r *companiaRepositoryImpl) FindByCondition(ctx context.Context, cond string, args ...interface{}) ([]entities.Compania, error) {
 	var list []entities.Compania
-	result := r.db.Where(cond, args...).Find(&list)
+	result := r.db.WithContext(ctx).Where(cond, args...).Find(&list)
 	return list, result.Error
 }
 
-// GetWithEmpleados carga la compañía con sus empleados
-// Equivale a .Include(c => c.Empleados) en EF Core
-func (r *companiaRepositoryImpl) GetWithEmpleados(id uint) (*entities.Compania, error) {
+func (r *companiaRepositoryImpl) GetWithEmpleados(ctx context.Context, id uint) (*entities.Compania, error) {
 	var c entities.Compania
-	if err := r.db.Preload("Empleados").First(&c, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Empleados").First(&c, id).Error; err != nil {
 		return nil, err
 	}
 	return &c, nil
