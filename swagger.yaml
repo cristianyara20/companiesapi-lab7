@@ -19,7 +19,7 @@ info:
 servers:
   - url: http://localhost:8080
     description: Servidor Local
-  - url: https://companies-api-yr97.onrender.com
+  - url: https://companiesapi-lab7.onrender.com
     description: Servidor en Render (Producción)
 
 # ── Esquema de Seguridad JWT ────────────────────────────────────────────
