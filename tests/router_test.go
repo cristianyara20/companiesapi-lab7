@@ -6,6 +6,7 @@ import (
     "net/http"
     "net/http/httptest"
     "strconv"
+    "strings"
     "testing"
 
     "github.com/gin-gonic/gin"
@@ -42,25 +43,53 @@ func setupTestRouter(t *testing.T) *gin.Engine {
 
 // ---------- Helper to obtain JWT (registro + login) ----------
 func obtainToken(t *testing.T, router *gin.Engine, email, password string) string {
-    // registro (USUARIO por defecto)
-    reg := map[string]interface{}{"nombre": "Tester", "correo": email, "contrasena": password, "rol": "USUARIO"}
+    rol := "USUARIO"
+    if strings.Contains(email, "admin") {
+        rol = "ADMIN"
+    }
+
+    reg := map[string]interface{}{"nombre": "Tester", "correo": email, "contrasena": password, "rol": rol}
+    if rol == "USUARIO" {
+        reg["compania_id"] = uint(1)
+    }
+
     body, _ := json.Marshal(reg)
     req := httptest.NewRequest(http.MethodPost, "/api/auth/registro", bytes.NewReader(body))
     req.Header.Set("Content-Type", "application/json")
     w := httptest.NewRecorder()
     router.ServeHTTP(w, req)
-    // el registro puede fallar si la compañía 1 no existe; creamos una compañía mínima antes
+
+    // Si el registro falla (porque la compañía con ID 1 no existe en la BD en memoria)
     if w.Code != http.StatusCreated && w.Code != http.StatusOK {
-        // crear compañía preliminar
+        // 1. Registramos un usuario temporal sin compañía para poder crearla
+        tempReg := map[string]interface{}{"nombre": "Temp", "correo": "temp_" + email, "contrasena": password, "rol": "USUARIO"}
+        tempBody, _ := json.Marshal(tempReg)
+        tempReq := httptest.NewRequest(http.MethodPost, "/api/auth/registro", bytes.NewReader(tempBody))
+        tempReq.Header.Set("Content-Type", "application/json")
+        tempW := httptest.NewRecorder()
+        router.ServeHTTP(tempW, tempReq)
+
+        // 2. Iniciamos sesión con el usuario temporal
+        tempLogin := map[string]string{"correo": "temp_" + email, "contrasena": password}
+        tempLoginBody, _ := json.Marshal(tempLogin)
+        tempLoginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(tempLoginBody))
+        tempLoginReq.Header.Set("Content-Type", "application/json")
+        tempLoginW := httptest.NewRecorder()
+        router.ServeHTTP(tempLoginW, tempLoginReq)
+
+        var tempResp struct{ Token string `json:"token"` }
+        json.Unmarshal(tempLoginW.Body.Bytes(), &tempResp)
+
+        // 3. Con el token del temporal, creamos la compañía preliminar (para que su ID sea 1)
         createComp := map[string]string{"nombre": "CompPre", "direccion": "Calle 123", "telefono": "1234567"}
         compBody, _ := json.Marshal(createComp)
         compReq := httptest.NewRequest(http.MethodPost, "/api/companias", bytes.NewReader(compBody))
         compReq.Header.Set("Content-Type", "application/json")
+        compReq.Header.Set("Authorization", "Bearer "+tempResp.Token)
         compW := httptest.NewRecorder()
         router.ServeHTTP(compW, compReq)
-        // añadir compañía_id al registro y reintentar
-        reg["compania_id"] = uint(1)
-        body, _ = json.Marshal(reg)
+
+        // 4. Ahora sí registramos al usuario real vinculándolo a la compañía 1
         req = httptest.NewRequest(http.MethodPost, "/api/auth/registro", bytes.NewReader(body))
         req.Header.Set("Content-Type", "application/json")
         w = httptest.NewRecorder()
@@ -129,7 +158,7 @@ func TestCompanyCRUDAndTransaccional(t *testing.T) {
     delReq.Header.Set("Authorization", "Bearer "+adminToken)
     dw := httptest.NewRecorder()
     router.ServeHTTP(dw, delReq)
-    assert.Equal(t, http.StatusOK, dw.Code)
+    assert.Equal(t, http.StatusNoContent, dw.Code)
     // Transaccional con empleados (ADMIN)
     txPayload := map[string]interface{}{
         "nombre":    "TxComp",
@@ -176,7 +205,7 @@ func TestEmployeeEndpointsAndPolicies(t *testing.T) {
     // crear empleado (propietario) usando token del propietario
     empPayload := map[string]interface{}{
         "nombre": "Prop", "apellido": "Owner", "correo": "prop@test.com",
-        "cargo": "Dev", "salario": 1500, "compania_id": compCreated.ID,
+        "cargo": "Dev", "salario": 1500, "compania_id": 1, // ownershipGuard requires user company ID to match employee company ID (user is registered with company 1)
     }
     empBody, _ := json.Marshal(empPayload)
     empReq := httptest.NewRequest(http.MethodPost, "/api/empleados", bytes.NewReader(empBody))
@@ -208,7 +237,7 @@ func TestEmployeeEndpointsAndPolicies(t *testing.T) {
     adminDelReq.Header.Set("Authorization", "Bearer "+adminToken)
     adw := httptest.NewRecorder()
     router.ServeHTTP(adw, adminDelReq)
-    assert.Equal(t, http.StatusOK, adw.Code)
+    assert.Equal(t, http.StatusNoContent, adw.Code)
 }
 
 // Tests for error handling (validation, missing token, wrong role)

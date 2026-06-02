@@ -18,10 +18,11 @@ import (
 // JWTClaims define los claims del token JWT.
 // Se expone aquí para que el middleware pueda importarlo sin ciclos.
 type JWTClaims struct {
-	UserID     uint   `json:"user_id"`
-	Correo     string `json:"correo"`
-	Rol        string `json:"rol"`
-	CompaniaID *uint  `json:"compania_id,omitempty"`
+	UserID    uint   `json:"user_id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	CompanyID *uint  `json:"company_id,omitempty"`
+	City      string `json:"city"`
 	jwt.RegisteredClaims
 }
 
@@ -127,11 +128,24 @@ func (s *AuthService) Login(ctx context.Context, dto dtos.LoginDTO) (string, *en
 		s.logger.Warn("⚠️  JWT_SECRET no configurado — usando valor de desarrollo")
 	}
 
+	city := "Global"
+	if u.CompaniaID != nil {
+		switch *u.CompaniaID {
+		case 1:
+			city = "Bogotá"
+		case 2:
+			city = "Medellín"
+		case 3:
+			city = "Cali"
+		}
+	}
+
 	claims := &JWTClaims{
-		UserID:     u.ID,
-		Correo:     u.Correo,
-		Rol:        u.Rol,
-		CompaniaID: u.CompaniaID,
+		UserID:    u.ID,
+		Email:     u.Correo,
+		Role:      u.Rol,
+		CompanyID: u.CompaniaID,
+		City:      city,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

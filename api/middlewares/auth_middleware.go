@@ -51,13 +51,14 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Establecer la información del usuario en el contexto de Gin
 		ctx.Set("user_id", claims.UserID)
-		ctx.Set("user_correo", claims.Correo)
-		ctx.Set("user_rol", claims.Rol)
-		if claims.CompaniaID != nil {
-			ctx.Set("user_compania_id", *claims.CompaniaID)
+		ctx.Set("user_correo", claims.Email)
+		ctx.Set("user_rol", claims.Role)
+		if claims.CompanyID != nil {
+			ctx.Set("user_compania_id", *claims.CompanyID)
 		} else {
 			ctx.Set("user_compania_id", nil)
 		}
+		ctx.Set("user_city", claims.City)
 
 		ctx.Next()
 	}
@@ -153,3 +154,51 @@ func EsPropietarioDeCompania(empleadoService *services.EmpleadoService) gin.Hand
 		ctx.Next()
 	}
 }
+
+// RestringirPatchAdminMedellin verifica si el usuario es ADMIN de Medellín y bloquea peticiones PATCH
+func RestringirPatchAdminMedellin() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		rolVal, existsRol := ctx.Get("user_rol")
+		compVal, existsComp := ctx.Get("user_compania_id")
+
+		if existsRol && existsComp && compVal != nil {
+			rol := rolVal.(string)
+			companiaID := compVal.(uint)
+
+			if rol == "ADMIN" && companiaID == 2 && ctx.Request.Method == "PATCH" {
+				ctx.JSON(http.StatusForbidden, gin.H{
+					"error":   "PATCH_NOT_ALLOWED",
+					"message": "Los administradores de Medellín no pueden realizar modificaciones parciales (PATCH).",
+				})
+				ctx.Abort()
+				return
+			}
+		}
+		ctx.Next()
+	}
+}
+
+// RestringirDeleteUsuarioBogota verifica si el usuario es USUARIO de Bogotá y bloquea peticiones DELETE
+func RestringirDeleteUsuarioBogota() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		rolVal, existsRol := ctx.Get("user_rol")
+		compVal, existsComp := ctx.Get("user_compania_id")
+
+		if existsRol && existsComp && compVal != nil {
+			rol := rolVal.(string)
+			companiaID := compVal.(uint)
+
+			if rol == "USUARIO" && companiaID == 1 && ctx.Request.Method == "DELETE" {
+				ctx.JSON(http.StatusForbidden, gin.H{
+					"error":   "DELETE_NOT_ALLOWED",
+					"message": "Los usuarios de Bogotá no pueden eliminar registros.",
+				})
+				ctx.Abort()
+				return
+			}
+		}
+		ctx.Next()
+	}
+}
+
+

@@ -47,26 +47,47 @@ func Seed(db *gorm.DB) {
 		log.Println("⚠️  Seed de compañías/empleados omitido: ya existen datos")
 	}
 
-	// ── 2. Seed de Usuario Administrador (Módulo 5) ──────────────────────
-	var userCount int64
-	db.Model(&entities.Usuario{}).Count(&userCount)
-	if userCount == 0 {
-		log.Println("🌱 Insertando usuario administrador inicial...")
-		hash, err := bcrypt.GenerateFromPassword([]byte("Admin123*"), bcrypt.DefaultCost)
-		if err != nil {
-			log.Fatalf("❌ Error generando hash de contraseña para admin: %v", err)
+	// ── 2. Seed de Usuarios (Administradores y de Negocio) ────────────────
+	log.Println("🌱 Verificando usuarios semilla...")
+	
+	// Helper para insertar un usuario si no existe
+	insertarUsuarioSiNoExiste := func(nombre, correo, contrasena, rol string, companiaID *uint) {
+		var u entities.Usuario
+		err := db.Where("correo = ?", correo).First(&u).Error
+		if err != nil && (err == gorm.ErrRecordNotFound || err.Error() == "record not found") {
+			log.Printf("👤 Creando usuario semilla: %s (%s)...", nombre, correo)
+			hash, err := bcrypt.GenerateFromPassword([]byte(contrasena), bcrypt.DefaultCost)
+			if err != nil {
+				log.Fatalf("❌ Error generando hash para %s: %v", correo, err)
+			}
+			
+			nuevoUsuario := entities.Usuario{
+				Nombre:         nombre,
+				Correo:         correo,
+				ContrasenaHash: string(hash),
+				Rol:            rol,
+				CompaniaID:     companiaID,
+			}
+			
+			if err := db.Create(&nuevoUsuario).Error; err != nil {
+				log.Fatalf("❌ Error al insertar usuario %s: %v", correo, err)
+			}
+			log.Printf("✅ Usuario %s creado exitosamente", correo)
+		} else if err != nil {
+			log.Printf("❌ Error consultando existencia de %s: %v", correo, err)
+		} else {
+			log.Printf("ℹ️  Usuario %s ya existe en la base de datos", correo)
 		}
-		admin := entities.Usuario{
-			Nombre:         "Administrador Global",
-			Correo:         "admin@companies.com",
-			ContrasenaHash: string(hash),
-			Rol:            "ADMIN",
-		}
-		if err := db.Create(&admin).Error; err != nil {
-			log.Fatalf("❌ Error insertando admin inicial: %v", err)
-		}
-		log.Println("✅ Usuario administrador semilla insertado: admin@companies.com / Admin123*")
-	} else {
-		log.Println("⚠️  Seed de usuarios omitido: ya existen usuarios")
 	}
+
+	// 1. Administrador Global
+	insertarUsuarioSiNoExiste("Administrador Global", "admin@companies.com", "Admin123*", "ADMIN", nil)
+
+	// 2. Administrador Medellín (Innovatech Ltda - ID: 2)
+	idMedellin := uint(2)
+	insertarUsuarioSiNoExiste("Administrador Medellín", "admin@innovatech.com", "Admin123*", "ADMIN", &idMedellin)
+
+	// 3. Usuario Bogotá (Tech Solutions S.A.S - ID: 1)
+	idBogota := uint(1)
+	insertarUsuarioSiNoExiste("Usuario Bogotá", "usuario@tech.com", "User123*", "USUARIO", &idBogota)
 }

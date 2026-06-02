@@ -43,7 +43,8 @@ func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
 	authGuard := middlewares.AuthMiddleware()
 	adminRoleGuard := middlewares.RequireRole("ADMIN")
 	anyRoleGuard := middlewares.RequireRole("ADMIN", "USUARIO")
-	ownershipGuard := middlewares.EsPropietarioDeCompania(empleadoService)
+	patchAdminMedellinGuard := middlewares.RestringirPatchAdminMedellin()
+	deleteUsuarioBogotaGuard := middlewares.RestringirDeleteUsuarioBogota()
 
 	// ── Rutas de la API ───────────────────────────────────────────────────
 	api := router.Group("/api")
@@ -65,7 +66,7 @@ func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
 			comp.POST("/con-empleados", adminRoleGuard, companiaCtrl.CreateConEmpleados) // Transaccional (Solo ADMIN)
 			comp.GET("/:id", anyRoleGuard, companiaCtrl.GetById)                       // Buscar por ID
 			comp.PUT("/:id", anyRoleGuard, companiaCtrl.Update)                        // Actualizar
-			comp.DELETE("/:id", adminRoleGuard, companiaCtrl.Delete)                   // Eliminar (Solo ADMIN)
+			comp.DELETE("/:id", adminRoleGuard, deleteUsuarioBogotaGuard, companiaCtrl.Delete)                   // Eliminar (Solo ADMIN)
 			comp.GET("/:id/empleados", anyRoleGuard, companiaCtrl.GetEmpleados)        // Empleados de una compañía
 		}
 
@@ -76,11 +77,11 @@ func Setup(db *gorm.DB, logger *zap.Logger) *gin.Engine {
 			emp.GET("", anyRoleGuard, empleadoCtrl.GetAll)                                // Listar todos (paged, filtered, sorted)
 			emp.POST("", anyRoleGuard, empleadoCtrl.Create)                               // Crear
 			emp.POST("/lote", anyRoleGuard, empleadoCtrl.CreateRange)                     // Creación masiva (Bulk)
-			emp.DELETE("/lote", adminRoleGuard, empleadoCtrl.DeleteRange)                 // Eliminación múltiple (Solo ADMIN)
+			emp.DELETE("/lote", adminRoleGuard, deleteUsuarioBogotaGuard, empleadoCtrl.DeleteRange)                 // Eliminación múltiple (Solo ADMIN)
 			emp.GET("/:id", anyRoleGuard, empleadoCtrl.GetById)                           // Buscar por ID
-			emp.PUT("/:id", anyRoleGuard, ownershipGuard, empleadoCtrl.Update)            // Reemplazo completo (Propietario / ADMIN)
-			emp.PATCH("/:id", anyRoleGuard, ownershipGuard, empleadoCtrl.Patch)           // Actualización parcial (Propietario / ADMIN)
-			emp.DELETE("/:id", anyRoleGuard, ownershipGuard, empleadoCtrl.Delete)         // Eliminar individual (Propietario / ADMIN)
+			emp.PUT("/:id", anyRoleGuard, empleadoCtrl.Update)            // Reemplazo completo
+			emp.PATCH("/:id", anyRoleGuard, patchAdminMedellinGuard, empleadoCtrl.Patch)           // Actualización parcial
+			emp.DELETE("/:id", anyRoleGuard, deleteUsuarioBogotaGuard, empleadoCtrl.Delete)         // Eliminar individual
 		}
 	}
 
